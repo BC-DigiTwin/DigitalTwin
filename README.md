@@ -1,73 +1,95 @@
-# React + TypeScript + Vite
+# Twin Campus
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A web-based Digital Twin of a college campus, built as a 12-week capstone project MVP.
 
-Currently, two official plugins are available:
+## Project Overview
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+**Twin Campus** is an interactive 3D visualization platform that creates a digital representation of a physical college campus. The project aims to provide an immersive, web-based experience where users can explore campus buildings, floors, and rooms in a three-dimensional environment.
 
-## React Compiler
+## Goals
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- Build a functional MVP of a campus digital twin accessible via web browser
+- Implement a geospatially-accurate 3D representation of campus buildings
+- Create an intuitive navigation system for exploring campus spaces
+- Establish a scalable architecture for future expansion and feature additions
 
-## Expanding the ESLint configuration
+## Technology Stack
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+### Frontend
+- **React** with **TypeScript** - Core framework
+- **React Three Fiber** - 3D rendering and scene management
+- **Three.js** - 3D graphics library
+- **@react-three/drei** - React Three Fiber helpers and utilities
+- **Vite** - Build tool and development server
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+### Backend
+- **AWS** - Cloud infrastructure and hosting
+- **S3 + CloudFront** - Asset hosting and CDN for 3D models
+- **Prisma** - ORM for database management
+- **REST API** - Backend services
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+## Architecture
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+### Database Schema
+The project uses a recursive database structure with a single `locations` table:
+- **Hierarchy:** `CAMPUS` → `BUILDING` → `FLOOR` → `ROOM`
+- **Implementation:** Self-referencing table with `parent_id` relationships
+
+### 3D Asset Strategy
+- **Hero Assets:** High-fidelity photogrammetry models (limited to 3-4 key locations)
+- **Greybox Assets:** Low-poly placeholder models for context
+- **Compression:** All 3D models are Draco-compressed via `gltf-pipeline`
+- **Hosting:** Frontend code on Vercel; heavy assets (.glb files) on AWS S3 + CloudFront
+
+### Coordinate System
+The 3D scene uses a geospatial anchor system:
+- All positions are calculated from a real-world GPS anchor point
+- Buildings are positioned using latitude/longitude coordinates
+- Conversion utilities transform GPS coordinates to 3D vector positions
+
+## Getting Started
+
+### Prerequisites
+- Node.js (v18 or higher recommended)
+- npm or yarn
+
+### Installation
+
+1. Clone the repository:
+```bash
+git clone <repository-url>
+cd DigitalTwin
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+2. Install dependencies:
+```bash
+npm install
 ```
+
+3. Start the development server:
+```bash
+npm run dev
+```
+
+4. Open your browser and navigate to the URL shown in the terminal (typically `http://localhost:5173`)
+
+### Available Scripts
+
+- `npm run dev` - Start the development server
+- `npm run build` - Build for production
+- `npm run preview` - Preview the production build
+- `npm run lint` - Run ESLint
+
+## Project Status
+
+**Current Phase:** Early Development (Phase 1)
+
+This project is in the initial stages of development. Current focus areas include:
+- Setting up the geospatial coordinate system
+- Establishing the 3D scene architecture
+- Configuring asset hosting infrastructure
+- Building core navigation components
+
+## License
+
+This project is part of a capstone course and is not currently licensed for public use.
