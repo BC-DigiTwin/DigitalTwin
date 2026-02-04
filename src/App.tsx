@@ -1,12 +1,18 @@
-// src/App.tsx
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
+import { ACESFilmicToneMapping, SRGBColorSpace } from 'three'
 
 export default function App() {
   return (
     <div style={{ width: '100vw', height: '100vh' }}>
       {/* The Canvas is your window into the 3D world */}
-      <Canvas>
+      <Canvas
+        dpr={[1, 2]}
+        onCreated={({ gl }) => {
+          gl.toneMapping = ACESFilmicToneMapping
+          gl.outputColorSpace = SRGBColorSpace
+        }}
+      >
         {/* Lights allow you to see the 3D objects */}
         <ambientLight intensity={0.5} />
         <directionalLight position={[2, 5, 2]} intensity={1} />
