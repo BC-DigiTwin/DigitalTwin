@@ -2,31 +2,34 @@ import { Canvas } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import './App.css'
 import { ACESFilmicToneMapping, SRGBColorSpace } from 'three'
+import { DebugWrapper } from './components/DebugWrapper'
 
 export default function App() {
   return (
-    <div className="canvas-container">
-      {/* The Canvas is your window into the 3D world */}
-      <Canvas
-        dpr={[1, 2]}
-        onCreated={({ gl }) => {
-          gl.toneMapping = ACESFilmicToneMapping
-          gl.outputColorSpace = SRGBColorSpace
-        }}
-      >
-        {/* Lights allow you to see the 3D objects */}
-        <ambientLight intensity={0.5} />
-        <directionalLight position={[2, 5, 2]} intensity={1} />
+    <DebugWrapper>
+      <div className="canvas-container">
+        {/* The Canvas is your window into the 3D world */}
+        <Canvas
+          dpr={[1, 2]}
+          onCreated={({ gl }) => {
+            gl.toneMapping = ACESFilmicToneMapping
+            gl.outputColorSpace = SRGBColorSpace
+          }}
+        >
+          {/* Lights allow you to see the 3D objects */}
+          <ambientLight intensity={0.5} />
+          <directionalLight position={[2, 5, 2]} intensity={1} />
 
-        {/* OrbitControls let you rotate/zoom with the mouse */}
-        <OrbitControls />
+          {/* OrbitControls let you rotate/zoom with the mouse */}
+          <OrbitControls />
 
-        {/* A simple mesh (object) */}
-        <mesh>
-          <boxGeometry args={[1, 1, 1]} />
-          <meshStandardMaterial color="mediumpurple" />
-        </mesh>
-      </Canvas>
-    </div>
+          {/* A simple mesh (object) */}
+          <mesh>
+            <boxGeometry args={[1, 1, 1]} />
+            <meshStandardMaterial color="mediumpurple" />
+          </mesh>
+        </Canvas>
+      </div>
+    </DebugWrapper>
   )
 }
