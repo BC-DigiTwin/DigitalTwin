@@ -1,10 +1,11 @@
 // src/App.tsx
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
+import './App.css'
 
 export default function App() {
   return (
-    <div style={{ width: '100vw', height: '100vh' }}>
+    <div className="canvas-container">
       {/* The Canvas is your window into the 3D world */}
       <Canvas>
         {/* Lights allow you to see the 3D objects */}
