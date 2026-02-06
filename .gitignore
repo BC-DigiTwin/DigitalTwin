@@ -5,6 +5,12 @@ yarn-debug.log*
 yarn-error.log*
 
 # Environment
+
+# Vite specific
+.vite/
+dist/          # Production build output
+
+# Environment variables (Sensitive info!)
 .env
 .env.local
 .env.*.local
@@ -27,3 +33,7 @@ Thumbs.db
 # Logs
 logs/
 *.log
+# IDE/System files
+.DS_Store
+.vscode/
+.cursorrules

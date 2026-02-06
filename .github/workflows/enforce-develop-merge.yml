@@ -1,0 +1,20 @@
+name: Enforce Merge Rules
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  enforce-develop-branch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check source branch
+        run: |
+          if [[ "${{ github.head_ref }}" != "develop" ]]; then
+            echo "❌ Error: Merges into main are ONLY allowed from the develop branch."
+            echo "Current source branch: ${{ github.head_ref }}"
+            exit 1
+          else
+            echo "✅ Source branch is develop. Proceeding."
+          fi
