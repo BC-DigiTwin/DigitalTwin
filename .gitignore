@@ -1,1 +1,16 @@
-node_modules
+# Dependencies
+node_modules/
+
+# Vite specific
+.vite/
+dist/          # Production build output
+
+# Environment variables (Sensitive info!)
+.env
+.env.local
+.env.*.local
+
+# IDE/System files
+.DS_Store
+.vscode/
+.cursorrules
