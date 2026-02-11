@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { useControls, button } from 'leva'
 import { Perf } from 'r3f-perf'
@@ -9,6 +10,7 @@ import {
 import { LightingGroup } from './components/scene/LightingGroup'
 import { EnvironmentGroup } from './components/scene/EnvironmentGroup'
 import { BuildingsGroup } from './components/scene/BuildingsGroup'
+import { LoadingScreen } from './components/LoadingScreen'
 import './App.css'
 import { ACESFilmicToneMapping, SRGBColorSpace } from 'three'
 import { DebugWrapper } from './components/DebugWrapper'
@@ -52,7 +54,9 @@ export default function App() {
   return (
     <DebugWrapper>
       <div className="canvas-container">
-        {/* The Canvas is your window into the 3D world */}
+        {/* HTML overlay — tracks drei's internal loading progress */}
+        <LoadingScreen />
+
         <Canvas
           dpr={[1, 2]}
           onCreated={({ gl }) => {
@@ -65,10 +69,14 @@ export default function App() {
 
             <CameraRigWithControls />
 
-            {/* ── Scene-graph layers ─────────────────────────── */}
+            {/* Non-suspending layers render immediately */}
             <LightingGroup />
             <EnvironmentGroup />
-            <BuildingsGroup />
+
+            {/* Asset-heavy layers suspend until loaded */}
+            <Suspense fallback={null}>
+              <BuildingsGroup />
+            </Suspense>
           </CameraControlProvider>
         </Canvas>
       </div>
