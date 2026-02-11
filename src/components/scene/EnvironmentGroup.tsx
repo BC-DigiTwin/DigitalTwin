@@ -1,13 +1,17 @@
 import { useControls } from 'leva'
+import { useStore } from '../../store/useStore'
 
 /**
  * Scene-graph group that owns environmental / helper visuals:
  * world-origin axes, ground grid, sky, fog, etc.
  *
+ * Visibility is driven by the global Zustand `layers.environment` flag.
  * Everything here is non-interactive scenery that helps orient the
  * viewer without being a "building" or model asset.
  */
 export function EnvironmentGroup() {
+  const visible = useStore((s) => s.layers.environment)
+
   const {
     'Show Axes': showAxes,
     'Show Grid': showGrid,
@@ -25,7 +29,7 @@ export function EnvironmentGroup() {
   )
 
   return (
-    <group name="EnvironmentGroup">
+    <group name="EnvironmentGroup" visible={visible}>
       {showAxes && <axesHelper args={[3]} />}
       {showGrid && (
         <gridHelper args={[gridSize, gridDivisions, '#444', '#222']} />

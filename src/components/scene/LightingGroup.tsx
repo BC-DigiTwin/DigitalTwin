@@ -1,12 +1,16 @@
 import { useControls } from 'leva'
+import { useStore } from '../../store/useStore'
 
 /**
  * Scene-graph group that owns every light in the scene.
  *
+ * Visibility is driven by the global Zustand `layers.lighting` flag.
  * Leva exposes the key tuneable values so artists / devs can iterate
  * without touching code.
  */
 export function LightingGroup() {
+  const visible = useStore((s) => s.layers.lighting)
+
   const {
     'Ambient Intensity': ambientIntensity,
     'Sun Intensity': sunIntensity,
@@ -22,7 +26,7 @@ export function LightingGroup() {
   )
 
   return (
-    <group name="LightingGroup">
+    <group name="LightingGroup" visible={visible}>
       <ambientLight intensity={ambientIntensity} />
       <directionalLight
         position={sunPosition as [number, number, number]}

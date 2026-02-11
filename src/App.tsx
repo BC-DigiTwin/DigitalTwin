@@ -1,4 +1,4 @@
-import { Suspense } from 'react'
+import { Suspense, useEffect, useRef } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { useControls, button } from 'leva'
 import { Perf } from 'r3f-perf'
@@ -10,10 +10,53 @@ import {
 import { LightingGroup } from './components/scene/LightingGroup'
 import { EnvironmentGroup } from './components/scene/EnvironmentGroup'
 import { BuildingsGroup } from './components/scene/BuildingsGroup'
+import { StressTestGroup } from './components/scene/StressTestGroup'
 import { LoadingScreen } from './components/LoadingScreen'
+import { useStore, type LayerName } from './store/useStore'
 import './App.css'
 import { ACESFilmicToneMapping, SRGBColorSpace } from 'three'
 import { DebugWrapper } from './components/DebugWrapper'
+
+/**
+ * Leva panel that exposes scene-layer visibility toggles backed by Zustand.
+ *
+ * Leva owns the checkbox state; changes are pushed one-way into Zustand
+ * via `useEffect` so we avoid an infinite onChange → re-render loop.
+ */
+function LayerToggles() {
+  const setLayerVisible = useStore((s) => s.setLayerVisible)
+  const initialRef = useRef(useStore.getState().layers)
+
+  const {
+    Lighting: lighting,
+    Environment: environment,
+    Buildings: buildings,
+    'Stress Test': stressTest,
+  } = useControls(
+    'Layer Visibility',
+    {
+      Lighting: { value: initialRef.current.lighting },
+      Environment: { value: initialRef.current.environment },
+      Buildings: { value: initialRef.current.buildings },
+      'Stress Test': { value: initialRef.current.stressTest },
+    },
+    { collapsed: false },
+  )
+
+  useEffect(() => {
+    const entries: [LayerName, boolean][] = [
+      ['lighting', lighting],
+      ['environment', environment],
+      ['buildings', buildings],
+      ['stressTest', stressTest],
+    ]
+    for (const [layer, visible] of entries) {
+      setLayerVisible(layer, visible)
+    }
+  }, [lighting, environment, buildings, stressTest, setLayerVisible])
+
+  return null
+}
 
 /**
  * Single Leva `useControls` call for everything camera-related:
@@ -68,10 +111,12 @@ export default function App() {
             <Perf position="top-left" minimal={false} />
 
             <CameraRigWithControls />
+            <LayerToggles />
 
             {/* Non-suspending layers render immediately */}
             <LightingGroup />
             <EnvironmentGroup />
+            <StressTestGroup />
 
             {/* Asset-heavy layers suspend until loaded */}
             <Suspense fallback={null}>
