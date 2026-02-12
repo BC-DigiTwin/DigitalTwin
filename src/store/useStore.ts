@@ -34,7 +34,7 @@ export const useStore = create<Store>()(
     devtools(
         (set) => ({
             // Initial state
-            debugMode: false,
+            debugMode: true,
             appState: 'initial',
 
             // Actions
