@@ -54,17 +54,7 @@ CREATE TABLE locations (
   CONSTRAINT fk_locations_parent
     FOREIGN KEY (parent_id) 
     REFERENCES locations(id)
-    ON DELETE CASCADE
-    ON UPDATE CASCADE,
-  
-  -- Hierarchy validation (UPDATED - No Desk level)
-  CONSTRAINT chk_valid_hierarchy CHECK (
-    -- Valid parent-child relationships
-    (type = 'Campus' AND parent_id IS NULL) OR
-    (type = 'Building' AND parent_id IS NOT NULL) OR
-    (type = 'Floor' AND parent_id IS NOT NULL) OR
-    (type = 'Room' AND parent_id IS NOT NULL)
-  ),
+    ON DELETE CASCADE ON UPDATE CASCADE,
   
   -- Depth validation (UPDATED - Max depth 3)
   CONSTRAINT chk_depth CHECK (
