@@ -12,6 +12,7 @@ import { EnvironmentGroup } from './components/scene/EnvironmentGroup'
 import { BuildingsGroup } from './components/scene/BuildingsGroup'
 import { StressTestGroup } from './components/scene/StressTestGroup'
 import { LoadingScreen } from './components/LoadingScreen'
+import { Model as Campus } from './components/Campus'
 import { useStore, type LayerName } from './store/useStore'
 import './App.css'
 import { ACESFilmicToneMapping, SRGBColorSpace } from 'three'
@@ -120,8 +121,15 @@ export default function App() {
 
             {/* Asset-heavy layers suspend until loaded */}
             <Suspense fallback={null}>
+              <Campus />
               <BuildingsGroup />
             </Suspense>
+
+            {/* Debug: Simple test cube at origin to verify rendering */}
+            <mesh position={[0, 5, 0]}>
+              <boxGeometry args={[5, 5, 5]} />
+              <meshStandardMaterial color="orange" />
+            </mesh>
           </CameraControlProvider>
         </Canvas>
       </div>
