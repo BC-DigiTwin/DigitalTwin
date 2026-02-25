@@ -1,8 +1,17 @@
-#root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
+/* Canvas container - ensures full viewport without scrollbars */
+.canvas-container {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+/* Ensure Canvas fills its container */
+.canvas-container canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
 }
 
 .logo {
