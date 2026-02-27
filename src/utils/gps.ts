@@ -1,4 +1,5 @@
 import { Vector3 } from 'three'
+import { WORLD_ORIGIN } from '../constants/coordinates'
 
 /** Earth radius in meters (WGS84 equatorial approximation). */
 const EARTH_RADIUS_M = 6_371_000
@@ -29,4 +30,17 @@ export function gpsToVector3(
   const east = (lon - refLon) * metersPerDegreeLon
 
   return new Vector3(east, 0, -north)
+}
+
+/**
+ * Converts real-world GPS coordinates to scene coordinates using the app's
+ * World Origin (see WORLD_ORIGIN in constants/coordinates.ts). Use this for
+ * placing any geo-referenced content so all positions share the same anchor.
+ *
+ * @param lat - Latitude (degrees)
+ * @param lon - Longitude (degrees)
+ * @returns Vector3 in scene units (meters): (east, 0, -north) relative to World Origin
+ */
+export function gpsToWorldPosition(lat: number, lon: number): Vector3 {
+  return gpsToVector3(lat, lon, WORLD_ORIGIN.lat, WORLD_ORIGIN.lon)
 }
