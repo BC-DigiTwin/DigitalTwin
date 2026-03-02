@@ -1,0 +1,21 @@
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Location {
+  id        Int        @id @default(autoincrement())
+  name      String
+  depth     Int
+  parent_id Int?
+
+  parent    Location?  @relation("LocationHierarchy", fields: [parent_id], references: [id])
+  children  Location[] @relation("LocationHierarchy")
+
+  @@map("locations")
+}
