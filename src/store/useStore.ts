@@ -4,12 +4,20 @@ import { devtools } from 'zustand/middleware'
 /* ── Layer visibility ───────────────────────────────────────────── */
 
 /** Every toggleable scene-graph layer. */
-export type LayerName = 'lighting' | 'environment' | 'buildings' | 'stressTest'
+export type LayerName =
+    | 'lighting'
+    | 'environment'
+    | 'buildings'
+    | 'pathways'
+    | 'terrain'
+    | 'stressTest'
 
 export interface LayerVisibility {
     lighting: boolean
     environment: boolean
     buildings: boolean
+    pathways: boolean
+    terrain: boolean
     stressTest: boolean
 }
 
@@ -17,6 +25,8 @@ const DEFAULT_LAYER_VISIBILITY: LayerVisibility = {
     lighting: true,
     environment: true,
     buildings: true,
+    pathways: true,
+    terrain: true,
     stressTest: false,
 }
 
@@ -28,6 +38,7 @@ const DEFAULT_LAYER_VISIBILITY: LayerVisibility = {
 export interface AppState {
     debugMode: boolean
     appState: 'initial' | 'loading' | 'ready' | 'error'
+    assetError: string | null
     layers: LayerVisibility
 }
 
@@ -37,6 +48,7 @@ export interface AppState {
 export interface AppActions {
     setDebugMode: (mode: boolean) => void
     setAppState: (state: AppState['appState']) => void
+    setAssetError: (error: string | null) => void
     toggleLayer: (layer: LayerName) => void
     setLayerVisible: (layer: LayerName, visible: boolean) => void
 }
@@ -61,6 +73,7 @@ export const useStore = create<Store>()(
             // Initial state
             debugMode: true,
             appState: 'initial',
+            assetError: null,
             layers: { ...DEFAULT_LAYER_VISIBILITY },
 
             // Actions
@@ -69,6 +82,9 @@ export const useStore = create<Store>()(
 
             setAppState: (state: AppState['appState']) =>
                 set({ appState: state }, false, 'setAppState'),
+
+            setAssetError: (error: string | null) =>
+                set({ assetError: error }, false, 'setAssetError'),
 
             toggleLayer: (layer: LayerName) =>
                 set(
