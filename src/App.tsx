@@ -17,6 +17,7 @@ import { useStore, type LayerName } from './store/useStore'
 import './App.css'
 import { ACESFilmicToneMapping, SRGBColorSpace } from 'three'
 import { DebugWrapper } from './components/DebugWrapper'
+import { useHydrateLocations } from './hooks/useHydrateLocations'
 
 /**
  * Leva panel that exposes scene-layer visibility toggles backed by Zustand.
@@ -95,6 +96,8 @@ function CameraRigWithControls() {
 }
 
 export default function App() {
+  useHydrateLocations()
+  
   return (
     <DebugWrapper>
       <div className="canvas-container">
