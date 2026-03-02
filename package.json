@@ -25,6 +25,7 @@
     "r3f-perf": "^7.2.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "sharp": "^0.34.5",
     "three": "^0.182.0",
     "zod": "^4.3.6",
     "zustand": "^5.0.11"
@@ -43,6 +44,7 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
+    "gltfjsx": "^6.5.3",
     "jsdom": "^27.0.1",
     "prisma": "^7.4.0",
     "r3f-perf": "^7.2.3",
