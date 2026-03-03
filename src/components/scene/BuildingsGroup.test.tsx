@@ -1,14 +1,13 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render } from '@testing-library/react'
-import { BuildingsGroup, getRimIntensityForBuilding } from './BuildingsGroup'
+import { BuildingsGroup, CAMPUS_GLB_PATH } from './BuildingsGroup'
+import { useAssetLoader } from '../../hooks/useAssetLoader'
 
-const mockClock = { getElapsedTime: () => 0 }
+const mockScene = { children: [], uuid: 'scene' }
 
-// Mock R3F primitives and hooks so BuildingsGroup (and its RimLightMaterial children)
-// can render in a jsdom environment without requiring a real Canvas or WebGL context.
 vi.mock('@react-three/fiber', () => ({
   ...vi.importActual('@react-three/fiber'),
   Canvas: ({ children }: { children: React.ReactNode }) => (
@@ -17,24 +16,29 @@ vi.mock('@react-three/fiber', () => ({
   useFrame: (fn: () => void) => {
     fn()
   },
-  useThree: (selector?: (s: { clock: typeof mockClock }) => unknown) =>
-    selector ? selector({ clock: mockClock }) : { clock: mockClock },
+  useThree: (selector?: (s: { clock: { getElapsedTime: () => number } }) => unknown) =>
+    selector ? selector({ clock: { getElapsedTime: () => 0 } }) : { clock: { getElapsedTime: () => 0 } },
 }))
 
-describe('getRimIntensityForBuilding', () => {
-  it('returns 1 when building is hovered', () => {
-    expect(getRimIntensityForBuilding(0, 0)).toBe(1)
-  })
+vi.mock('../../hooks/useAssetLoader', () => ({
+  useAssetLoader: Object.assign(vi.fn(), { preload: vi.fn() }),
+}))
 
-  it('returns 0 when building is not hovered', () => {
-    expect(getRimIntensityForBuilding(1, 0)).toBe(0)
-    expect(getRimIntensityForBuilding(0, null)).toBe(0)
-  })
-})
+vi.mock('../../utils/gps', () => ({
+  gpsToWorldPosition: () => ({ x: 0, y: 0, z: 0 }),
+}))
 
 describe('BuildingsGroup', () => {
+  beforeEach(() => {
+    vi.mocked(useAssetLoader).mockReturnValue({ scene: mockScene } as never)
+  })
+
   it('renders without crashing', () => {
     expect(() => render(<BuildingsGroup />)).not.toThrow()
   })
-})
 
+  it('loads the campus greybox from the expected path', () => {
+    render(<BuildingsGroup />)
+    expect(useAssetLoader).toHaveBeenCalledWith(CAMPUS_GLB_PATH)
+  })
+})

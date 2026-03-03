@@ -1,64 +1,130 @@
-import { useState } from 'react'
-import { type ThreeEvent } from '@react-three/fiber'
+import { useState, useMemo } from 'react'
+import type { ThreeEvent } from '@react-three/fiber'
+import * as THREE from 'three'
 import { useStore } from '../../store/useStore'
-import { PLACEHOLDER_COLORS } from '../../constants/sceneMaterials'
+import { useAssetLoader } from '../../hooks/useAssetLoader'
+import { gpsToWorldPosition } from '../../utils/gps'
+import { WORLD_ORIGIN } from '../../constants/coordinates'
 import { RimLightMaterial } from './RimLightMaterial'
 
-const COLOR = PLACEHOLDER_COLORS.buildings
+/** Public path to the campus greybox GLB (World Origin = scene anchor). */
+export const CAMPUS_GLB_PATH = '/models/campus_greybox.glb'
 
-/** [x, z, width, depth, height] for each placeholder building. */
-const BUILDINGS: [number, number, number, number, number][] = [
-  [-12, -8, 10, 8, 7],
-  [6, -10, 8, 6, 10],
-  [18, -4, 6, 10, 5],
-  [-8, 10, 12, 6, 8],
-  [10, 12, 7, 7, 12],
-  [-20, 0, 6, 6, 6],
-]
+// Preload so Suspense can resolve when BuildingsGroup mounts
+useAssetLoader.preload(CAMPUS_GLB_PATH)
 
-export function getRimIntensityForBuilding(
-  buildingIndex: number,
-  hoveredIndex: number | null,
-): number {
-  return hoveredIndex === buildingIndex ? 1 : 0
+const RIM_GLOW_COLOR = '#00ffff'
+
+function getMaterialColor(material: THREE.Material | THREE.Material[]): string | number {
+  const mat = Array.isArray(material) ? material[0] : material
+  if (mat && 'color' in mat && mat.color instanceof THREE.Color) {
+    return mat.color.getStyle()
+  }
+  return '#888888'
+}
+
+interface SceneNodeProps {
+  node: THREE.Object3D
+  hoveredBuildingId: string | null
+  setHoveredBuildingId: (id: string | null) => void
+  /** UUID of the parent group that represents this building (walls + roof share this). */
+  buildingId: string | null
 }
 
 /**
- * Scene-graph group that will own every building / structure model.
+ * Recursively renders GLB scene nodes. Groups pass their uuid as buildingId so
+ * all meshes under the same group (e.g. walls + roof) share one hover: when any
+ * part is hovered, the whole building glows.
+ */
+function SceneNode({
+  node,
+  hoveredBuildingId,
+  setHoveredBuildingId,
+  buildingId: parentBuildingId,
+}: SceneNodeProps) {
+  if (node.type === 'Mesh') {
+    const mesh = node as THREE.Mesh
+    const id = mesh.uuid
+    const buildingId = parentBuildingId ?? id
+    const isHovered = hoveredBuildingId === buildingId
+
+    return (
+      <mesh
+        key={id}
+        geometry={mesh.geometry}
+        position={mesh.position.clone()}
+        quaternion={mesh.quaternion.clone()}
+        scale={mesh.scale.clone()}
+        castShadow
+        receiveShadow
+        onPointerOver={(e: ThreeEvent<PointerEvent>) => {
+          e.stopPropagation()
+          setHoveredBuildingId(buildingId)
+        }}
+        onPointerOut={(e: ThreeEvent<PointerEvent>) => {
+          e.stopPropagation()
+          setHoveredBuildingId(null)
+        }}
+      >
+        <RimLightMaterial
+          color={getMaterialColor(mesh.material)}
+          uColor={RIM_GLOW_COLOR}
+          uIntensity={isHovered ? 1 : 0}
+        />
+      </mesh>
+    )
+  }
+
+  const obj = node as THREE.Object3D
+  const thisGroupId = node.uuid
+  return (
+    <group
+      key={node.uuid}
+      position={node.position.clone()}
+      quaternion={node.quaternion.clone()}
+      scale={node.scale.clone()}
+    >
+      {obj.children.map((child) => (
+        <SceneNode
+          key={child.uuid}
+          node={child}
+          hoveredBuildingId={hoveredBuildingId}
+          setHoveredBuildingId={setHoveredBuildingId}
+          buildingId={thisGroupId}
+        />
+      ))}
+    </group>
+  )
+}
+
+/**
+ * Scene-graph group that owns all building / structure content.
  *
+ * Renders the campus greybox GLB at World Origin (anchor-based positioning
+ * per gpsToWorldPosition + WORLD_ORIGIN). Each mesh in the GLB is rendered
+ * with RimLightMaterial and pointer events so hovering a building creates
+ * the rim glow (issues 96–97: rim light shader, uColor/uIntensity uniforms).
  * Visibility is driven by the global Zustand `layers.buildings` flag.
- * For now it renders colour-coded placeholder boxes so each future
- * building is identifiable in the viewport.  Replace with real GLB
- * models loaded via `useAssetLoader` as assets become available.
  */
 export function BuildingsGroup() {
-  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
+  const [hoveredBuildingId, setHoveredBuildingId] = useState<string | null>(null)
   const visible = useStore((s) => s.layers.buildings)
+  const gltf = useAssetLoader(CAMPUS_GLB_PATH)
+
+  const position = gpsToWorldPosition(WORLD_ORIGIN.lat, WORLD_ORIGIN.lon)
+
+  const scene = useMemo(() => gltf.scene, [gltf.scene])
 
   return (
-    <group name="BuildingsGroup" visible={visible}>
-      {BUILDINGS.map(([x, z, w, d, h], i) => (
-        <mesh
-          key={i}
-          position={[x, h / 2, z]}
-          castShadow
-          receiveShadow
-          onPointerOver={(event: ThreeEvent<PointerEvent>) => {
-            event.stopPropagation()
-            setHoveredIndex(i)
-          }}
-          onPointerOut={(event: ThreeEvent<PointerEvent>) => {
-            event.stopPropagation()
-            setHoveredIndex((current) => (current === i ? null : current))
-          }}
-        >
-          <boxGeometry args={[w, h, d]} />
-          <RimLightMaterial
-            color={COLOR}
-            uColor="#00ffff"
-            uIntensity={getRimIntensityForBuilding(i, hoveredIndex)}
-          />
-        </mesh>
+    <group name="BuildingsGroup" visible={visible} position={position}>
+      {scene.children.map((child) => (
+        <SceneNode
+          key={child.uuid}
+          node={child}
+          hoveredBuildingId={hoveredBuildingId}
+          setHoveredBuildingId={setHoveredBuildingId}
+          buildingId={null}
+        />
       ))}
     </group>
   )
