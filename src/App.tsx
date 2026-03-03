@@ -14,7 +14,6 @@ import { PathwaysGroup } from './components/scene/PathwaysGroup'
 import { TerrainGroup } from './components/scene/TerrainGroup'
 import { StressTestGroup } from './components/scene/StressTestGroup'
 import { LoadingScreen } from './components/LoadingScreen'
-import { Model as Campus } from './components/Campus'
 import { useStore, type LayerName } from './store/useStore'
 import './App.css'
 import { ACESFilmicToneMapping, SRGBColorSpace } from 'three'
@@ -144,7 +143,6 @@ export default function App() {
               fallback={<PlaceholderBox size={[80, 12, 80]} />}
             >
               <Suspense fallback={null}>
-                <Campus />
                 <BuildingsGroup />
               </Suspense>
             </AssetErrorBoundary>
