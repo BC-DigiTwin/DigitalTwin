@@ -1,5 +1,5 @@
-import { Suspense, useEffect, useRef } from 'react'
-import { Canvas } from '@react-three/fiber'
+import { Suspense, useEffect, useRef, useState } from 'react'
+import { Canvas, type ThreeEvent } from '@react-three/fiber'
 import { useControls, button } from 'leva'
 import { Perf } from 'r3f-perf'
 import { CameraRig, DEFAULT_CAMERA_SETTINGS } from './components/CameraRig'
@@ -108,7 +108,9 @@ function CameraRigWithControls() {
 
 export default function App() {
   useHydrateLocations()
-  
+
+  const [debugCubeHovered, setDebugCubeHovered] = useState(false)
+
   return (
     <DebugWrapper>
       <div className="canvas-container">
@@ -148,9 +150,24 @@ export default function App() {
             </AssetErrorBoundary>
 
             {/* Debug: Simple test cube at origin to verify rendering (rim light + pulse) */}
-            <mesh position={[0, 5, 0]}>
+            <mesh
+              position={[0, 5, 0]}
+              onPointerOver={(event: ThreeEvent<PointerEvent>) => {
+                event.stopPropagation()
+                setDebugCubeHovered(true)
+              }}
+              onPointerOut={(event: ThreeEvent<PointerEvent>) => {
+                event.stopPropagation()
+                setDebugCubeHovered(false)
+              }}
+            >
               <boxGeometry args={[5, 5, 5]} />
-              <RimLightMaterial color="orange" uColor="#00ffff" uIntensity={1} uPulseSpeed={2} />
+              <RimLightMaterial
+                color="orange"
+                uColor="#00ffff"
+                uIntensity={debugCubeHovered ? 1 : 0}
+                uPulseSpeed={2}
+              />
             </mesh>
           </CameraControlProvider>
         </Canvas>

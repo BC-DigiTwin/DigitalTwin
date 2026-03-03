@@ -1,3 +1,5 @@
+import { useState } from 'react'
+import { type ThreeEvent } from '@react-three/fiber'
 import { useStore } from '../../store/useStore'
 import { PLACEHOLDER_COLORS } from '../../constants/sceneMaterials'
 import { RimLightMaterial } from './RimLightMaterial'
@@ -14,6 +16,13 @@ const BUILDINGS: [number, number, number, number, number][] = [
   [-20, 0, 6, 6, 6],
 ]
 
+export function getRimIntensityForBuilding(
+  buildingIndex: number,
+  hoveredIndex: number | null,
+): number {
+  return hoveredIndex === buildingIndex ? 1 : 0
+}
+
 /**
  * Scene-graph group that will own every building / structure model.
  *
@@ -23,14 +32,32 @@ const BUILDINGS: [number, number, number, number, number][] = [
  * models loaded via `useAssetLoader` as assets become available.
  */
 export function BuildingsGroup() {
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
   const visible = useStore((s) => s.layers.buildings)
 
   return (
     <group name="BuildingsGroup" visible={visible}>
       {BUILDINGS.map(([x, z, w, d, h], i) => (
-        <mesh key={i} position={[x, h / 2, z]} castShadow receiveShadow>
+        <mesh
+          key={i}
+          position={[x, h / 2, z]}
+          castShadow
+          receiveShadow
+          onPointerOver={(event: ThreeEvent<PointerEvent>) => {
+            event.stopPropagation()
+            setHoveredIndex(i)
+          }}
+          onPointerOut={(event: ThreeEvent<PointerEvent>) => {
+            event.stopPropagation()
+            setHoveredIndex((current) => (current === i ? null : current))
+          }}
+        >
           <boxGeometry args={[w, h, d]} />
-          <RimLightMaterial color={COLOR} uColor="#00ffff" uIntensity={1} />
+          <RimLightMaterial
+            color={COLOR}
+            uColor="#00ffff"
+            uIntensity={getRimIntensityForBuilding(i, hoveredIndex)}
+          />
         </mesh>
       ))}
     </group>
