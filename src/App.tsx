@@ -147,10 +147,10 @@ export default function App() {
               </Suspense>
             </AssetErrorBoundary>
 
-            {/* Debug: Simple test cube at origin to verify rendering (rim light) */}
+            {/* Debug: Simple test cube at origin to verify rendering (rim light + pulse) */}
             <mesh position={[0, 5, 0]}>
               <boxGeometry args={[5, 5, 5]} />
-              <RimLightMaterial color="orange" />
+              <RimLightMaterial color="orange" uColor="#00ffff" uIntensity={1} uPulseSpeed={2} />
             </mesh>
           </CameraControlProvider>
         </Canvas>

@@ -3,12 +3,17 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render } from '@testing-library/react'
-import { RimLightMaterial, computeRimFactor } from './RimLightMaterial'
+import { RimLightMaterial, computeRimFactor, computePulseFactor } from './RimLightMaterial'
 
-// R3F primitives (mesh, meshStandardMaterial) are not DOM elements; we only assert the wrapper renders
+const mockClock = { getElapsedTime: () => 0 }
+
+// R3F primitives and hooks: avoid real Canvas/clock; RimLightMaterial uses useFrame + useThree for uTime
 vi.mock('@react-three/fiber', () => ({
   ...vi.importActual('@react-three/fiber'),
   Canvas: ({ children }: { children: React.ReactNode }) => <div data-testid="canvas">{children}</div>,
+  useFrame: (fn: () => void) => { fn() },
+  useThree: (selector?: (s: { clock: typeof mockClock }) => unknown) =>
+    selector ? selector({ clock: mockClock }) : { clock: mockClock },
 }))
 
 describe('computeRimFactor', () => {
@@ -25,7 +30,7 @@ describe('computeRimFactor', () => {
     expect(rim).toBe(1)
   })
 
-  it('scales by rimIntensity', () => {
+  it('scales by uIntensity', () => {
     const normal = { x: 1, y: 0, z: 0 }
     const viewDir = { x: 0, y: 0, z: 1 }
     expect(computeRimFactor(normal, viewDir, 3, 2)).toBe(2)
@@ -40,6 +45,25 @@ describe('computeRimFactor', () => {
   })
 })
 
+describe('computePulseFactor', () => {
+  it('returns 0.5 when sin(time * speed) is 0', () => {
+    expect(computePulseFactor(0, 1)).toBeCloseTo(0.5)
+    expect(computePulseFactor(Math.PI, 1)).toBeCloseTo(0.5)
+  })
+
+  it('returns 1 when sin(time * speed) is 1', () => {
+    expect(computePulseFactor(Math.PI / 2, 1)).toBeCloseTo(1)
+  })
+
+  it('returns 0 when sin(time * speed) is -1', () => {
+    expect(computePulseFactor((3 * Math.PI) / 2, 1)).toBeCloseTo(0)
+  })
+
+  it('scales pulse period by speed', () => {
+    expect(computePulseFactor(1, 2)).not.toBe(computePulseFactor(1, 1))
+  })
+})
+
 describe('RimLightMaterial', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -50,6 +74,16 @@ describe('RimLightMaterial', () => {
       render(
         <div data-testid="wrapper">
           <RimLightMaterial color="#ff0000" />
+        </div>
+      )
+    ).not.toThrow()
+  })
+
+  it('accepts uColor, uIntensity, and uPulseSpeed and renders', () => {
+    expect(() =>
+      render(
+        <div data-testid="wrapper">
+          <RimLightMaterial color="#ff0000" uColor="#00ffff" uIntensity={1.5} uPulseSpeed={3} />
         </div>
       )
     ).not.toThrow()
