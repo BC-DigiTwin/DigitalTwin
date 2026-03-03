@@ -30,7 +30,7 @@ export function BuildingsGroup() {
       {BUILDINGS.map(([x, z, w, d, h], i) => (
         <mesh key={i} position={[x, h / 2, z]} castShadow receiveShadow>
           <boxGeometry args={[w, h, d]} />
-          <RimLightMaterial color={COLOR} />
+          <RimLightMaterial color={COLOR} uColor="#00ffff" uIntensity={1} />
         </mesh>
       ))}
     </group>

@@ -1,13 +1,15 @@
 /*
  * Rim Light Material — extends MeshStandardMaterial with a rim (Fresnel-edge) glow.
  *
- * Uses dot(View, Normal): rim = 1 − max(0, N·V), then pow(rim, rimPower) * rimIntensity.
- * Edges (normal perpendicular to view) get bright; surfaces facing the camera stay dark.
+ * Uses dot(View, Normal): rim = 1 − max(0, N·V), then pow(rim, rimPower) * uIntensity.
+ * Edges get bright; surfaces facing the camera stay dark. Optional pulse via uTime and uPulseSpeed.
  *
+ * Exposes uniforms: uColor, uIntensity, uTime, uPulseSpeed (and rimPower).
  * Injects into the built-in fragment shader via onBeforeCompile; keeps PBR lighting.
  */
 import React, { useLayoutEffect, useRef } from 'react'
 import * as THREE from 'three'
+import { useFrame, useThree } from '@react-three/fiber'
 import { RIM_LIGHT_DEFAULTS } from '../../constants/sceneMaterials'
 
 function toColor(c: string | THREE.Color): THREE.Color {
@@ -29,56 +31,78 @@ export function computeRimFactor(
   return Math.pow(rim, power) * intensity
 }
 
-/** Fragment snippet: add rim to outgoingLight before it is written to gl_FragColor. */
+/**
+ * Pulse factor from time and speed: 0.5 + 0.5 * sin(time * speed).
+ * Exported for unit tests.
+ */
+export function computePulseFactor(time: number, speed: number): number {
+  return 0.5 + 0.5 * Math.sin(time * speed)
+}
+
+/** Fragment snippet: add rim (with pulse) to outgoingLight before it is written to gl_FragColor. */
 const RIM_FRAGMENT_SNIPPET = `
   vec3 viewDir = normalize( vViewPosition );
   float rim = 1.0 - max( 0.0, dot( normal, viewDir ) );
-  rim = pow( rim, rimPower ) * rimIntensity;
-  outgoingLight += rimColor * rim;
+  rim = pow( rim, rimPower ) * uIntensity;
+  float pulse = 0.5 + 0.5 * sin( uTime * uPulseSpeed );
+  outgoingLight += uColor * rim * pulse;
 `
 
 /** Uniform declarations to inject into the fragment shader. */
 const RIM_UNIFORM_DECLARATIONS = `
-  uniform vec3 rimColor;
+  uniform vec3 uColor;
   uniform float rimPower;
-  uniform float rimIntensity;
+  uniform float uIntensity;
+  uniform float uTime;
+  uniform float uPulseSpeed;
 `
 
-/** Props: standard MeshStandardMaterial props plus rim light controls. */
+/** Props: standard MeshStandardMaterial props plus rim light / pulse controls. */
 export interface RimLightMaterialProps {
   color?: string | number | THREE.Color
   /** Color of the rim glow (default from sceneMaterials). */
-  rimColor?: string | THREE.Color
+  uColor?: string | THREE.Color
   /** Edge sharpness: higher = thinner rim (default 3). */
   rimPower?: number
   /** Brightness of the rim (default 1). */
-  rimIntensity?: number
+  uIntensity?: number
+  /** Radians per second for pulse (default 2). uTime is driven by the R3F clock. */
+  uPulseSpeed?: number
   [key: string]: unknown
 }
 
 /**
  * MeshStandardMaterial with rim light: glowing edge from dot(viewDir, normal).
+ * Pulse is controlled by uTime (from R3F clock) and uPulseSpeed.
  * Use in place of <meshStandardMaterial> for any mesh.
  */
 export function RimLightMaterial({
-  rimColor = RIM_LIGHT_DEFAULTS.rimColor,
+  uColor: uColorProp = RIM_LIGHT_DEFAULTS.uColor,
   rimPower = RIM_LIGHT_DEFAULTS.rimPower,
-  rimIntensity = RIM_LIGHT_DEFAULTS.rimIntensity,
+  uIntensity = RIM_LIGHT_DEFAULTS.uIntensity,
+  uPulseSpeed = RIM_LIGHT_DEFAULTS.uPulseSpeed,
   ...standardProps
 }: RimLightMaterialProps) {
   const materialRef = useRef<THREE.MeshStandardMaterial>(null!)
-  // Store uniform refs so we can update .value when props change (shader compiles once)
+  const clock = useThree((s) => s.clock)
   const uniformsRef = useRef({
-    rimColor: { value: toColor(rimColor) },
+    uColor: { value: toColor(uColorProp) },
     rimPower: { value: rimPower },
-    rimIntensity: { value: rimIntensity },
+    uIntensity: { value: uIntensity },
+    uTime: { value: 0 },
+    uPulseSpeed: { value: uPulseSpeed },
   })
 
   useLayoutEffect(() => {
-    uniformsRef.current.rimColor.value.copy(toColor(rimColor))
+    uniformsRef.current.uColor.value.copy(toColor(uColorProp))
     uniformsRef.current.rimPower.value = rimPower
-    uniformsRef.current.rimIntensity.value = rimIntensity
-  }, [rimColor, rimPower, rimIntensity])
+    uniformsRef.current.uIntensity.value = uIntensity
+    uniformsRef.current.uPulseSpeed.value = uPulseSpeed
+  }, [uColorProp, rimPower, uIntensity, uPulseSpeed])
+
+  useFrame(() => {
+    uniformsRef.current.uTime.value = clock.getElapsedTime()
+  })
 
   useLayoutEffect(() => {
     const material = materialRef.current
