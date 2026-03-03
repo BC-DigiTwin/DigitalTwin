@@ -43,9 +43,9 @@ The project uses a recursive database structure with a single `locations` table:
 
 ### Coordinate System
 The 3D scene uses a geospatial anchor system:
-- All positions are calculated from a real-world GPS anchor point
-- Buildings are positioned using latitude/longitude coordinates
-- Conversion utilities transform GPS coordinates to 3D vector positions
+- **World Origin:** Scene (0, 0, 0) corresponds to a single real-world (lat, lon) defined in `src/constants/coordinates.ts` as `WORLD_ORIGIN`. Use `gpsToWorldPosition(lat, lon)` from `src/utils/gps.ts` for any geo-referenced placement.
+- All positions are calculated from this anchor; buildings are positioned using latitude/longitude coordinates.
+- Conversion utilities: `gpsToVector3()` (with optional ref) and `gpsToWorldPosition()` (uses World Origin).
 
 ## Getting Started
 
