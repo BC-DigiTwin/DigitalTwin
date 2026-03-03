@@ -10,6 +10,8 @@ import {
 import { LightingGroup } from './components/scene/LightingGroup'
 import { EnvironmentGroup } from './components/scene/EnvironmentGroup'
 import { BuildingsGroup } from './components/scene/BuildingsGroup'
+import { PathwaysGroup } from './components/scene/PathwaysGroup'
+import { TerrainGroup } from './components/scene/TerrainGroup'
 import { StressTestGroup } from './components/scene/StressTestGroup'
 import { LoadingScreen } from './components/LoadingScreen'
 import { Model as Campus } from './components/Campus'
@@ -17,6 +19,8 @@ import { useStore, type LayerName } from './store/useStore'
 import './App.css'
 import { ACESFilmicToneMapping, SRGBColorSpace } from 'three'
 import { DebugWrapper } from './components/DebugWrapper'
+import { AssetErrorBoundary } from './components/AssetErrorBoundary'
+import { PlaceholderBox } from './components/PlaceholderBox'
 import { useHydrateLocations } from './hooks/useHydrateLocations'
 
 /**
@@ -33,6 +37,8 @@ function LayerToggles() {
     Lighting: lighting,
     Environment: environment,
     Buildings: buildings,
+    Pathways: pathways,
+    Terrain: terrain,
     'Stress Test': stressTest,
   } = useControls(
     'Layer Visibility',
@@ -40,6 +46,8 @@ function LayerToggles() {
       Lighting: { value: initialRef.current.lighting },
       Environment: { value: initialRef.current.environment },
       Buildings: { value: initialRef.current.buildings },
+      Pathways: { value: initialRef.current.pathways },
+      Terrain: { value: initialRef.current.terrain },
       'Stress Test': { value: initialRef.current.stressTest },
     },
     { collapsed: false },
@@ -50,12 +58,14 @@ function LayerToggles() {
       ['lighting', lighting],
       ['environment', environment],
       ['buildings', buildings],
+      ['pathways', pathways],
+      ['terrain', terrain],
       ['stressTest', stressTest],
     ]
     for (const [layer, visible] of entries) {
       setLayerVisible(layer, visible)
     }
-  }, [lighting, environment, buildings, stressTest, setLayerVisible])
+  }, [lighting, environment, buildings, pathways, terrain, stressTest, setLayerVisible])
 
   return null
 }
@@ -120,13 +130,21 @@ export default function App() {
             {/* Non-suspending layers render immediately */}
             <LightingGroup />
             <EnvironmentGroup />
+            <TerrainGroup />
+            <PathwaysGroup />
             <StressTestGroup />
 
-            {/* Asset-heavy layers suspend until loaded */}
-            <Suspense fallback={null}>
-              <Campus />
-              <BuildingsGroup />
-            </Suspense>
+            {/* Asset-heavy layers suspend until loaded; errors are caught
+                and surfaced via the HTML overlay (LoadingScreen).
+                The fallback box approximates the campus model footprint. */}
+            <AssetErrorBoundary
+              fallback={<PlaceholderBox size={[80, 12, 80]} />}
+            >
+              <Suspense fallback={null}>
+                <Campus />
+                <BuildingsGroup />
+              </Suspense>
+            </AssetErrorBoundary>
 
             {/* Debug: Simple test cube at origin to verify rendering */}
             <mesh position={[0, 5, 0]}>
