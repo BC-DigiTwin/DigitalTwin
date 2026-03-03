@@ -46,11 +46,8 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
-<<<<<<< HEAD
-    "jest": "^30.2.0",
-=======
     "gltfjsx": "^6.5.3",
->>>>>>> origin/develop
+    "jest": "^30.2.0",
     "jsdom": "^27.0.1",
     "prisma": "^7.4.0",
     "r3f-perf": "^7.2.3",
