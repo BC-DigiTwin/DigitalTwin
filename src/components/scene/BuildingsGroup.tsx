@@ -1,5 +1,6 @@
 import { useStore } from '../../store/useStore'
 import { PLACEHOLDER_COLORS } from '../../constants/sceneMaterials'
+import { RimLightMaterial } from './RimLightMaterial'
 
 const COLOR = PLACEHOLDER_COLORS.buildings
 
@@ -29,7 +30,7 @@ export function BuildingsGroup() {
       {BUILDINGS.map(([x, z, w, d, h], i) => (
         <mesh key={i} position={[x, h / 2, z]} castShadow receiveShadow>
           <boxGeometry args={[w, h, d]} />
-          <meshStandardMaterial color={COLOR} />
+          <RimLightMaterial color={COLOR} />
         </mesh>
       ))}
     </group>

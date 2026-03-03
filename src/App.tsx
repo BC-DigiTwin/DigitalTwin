@@ -21,6 +21,7 @@ import { ACESFilmicToneMapping, SRGBColorSpace } from 'three'
 import { DebugWrapper } from './components/DebugWrapper'
 import { AssetErrorBoundary } from './components/AssetErrorBoundary'
 import { PlaceholderBox } from './components/PlaceholderBox'
+import { RimLightMaterial } from './components/scene/RimLightMaterial'
 import { useHydrateLocations } from './hooks/useHydrateLocations'
 
 /**
@@ -146,10 +147,10 @@ export default function App() {
               </Suspense>
             </AssetErrorBoundary>
 
-            {/* Debug: Simple test cube at origin to verify rendering */}
+            {/* Debug: Simple test cube at origin to verify rendering (rim light) */}
             <mesh position={[0, 5, 0]}>
               <boxGeometry args={[5, 5, 5]} />
-              <meshStandardMaterial color="orange" />
+              <RimLightMaterial color="orange" />
             </mesh>
           </CameraControlProvider>
         </Canvas>

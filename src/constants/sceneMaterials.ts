@@ -12,3 +12,10 @@ export const PLACEHOLDER_COLORS = {
 } as const
 
 export type PlaceholderCategory = keyof typeof PLACEHOLDER_COLORS
+
+/** Defaults for rim light shader (Fresnel-edge glow). */
+export const RIM_LIGHT_DEFAULTS = {
+  rimColor: '#00ffff',
+  rimPower: 3,
+  rimIntensity: 1,
+} as const

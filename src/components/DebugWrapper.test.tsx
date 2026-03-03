@@ -8,19 +8,11 @@ vi.mock('../store/useStore', () => ({
   useStore: vi.fn(),
 }))
 
-// Mock leva and r3f-perf
+// Mock leva (DebugWrapper only renders Leva, not Perf)
 vi.mock('leva', () => ({
   Leva: ({ hidden }: { hidden: boolean }) => (
-    <div data-testid="leva" data-hidden={hidden}>
+    <div data-testid="leva" data-hidden={String(hidden)}>
       Leva Panel
-    </div>
-  ),
-}))
-
-vi.mock('r3f-perf', () => ({
-  Perf: ({ position }: { position: string }) => (
-    <div data-testid="perf" data-position={position}>
-      Performance Monitor
     </div>
   ),
 }))
@@ -43,7 +35,7 @@ describe('DebugWrapper', () => {
     expect(screen.getByText('Child Content')).toBeInTheDocument()
   })
 
-  it('hides Leva and Perf when debugMode is false', () => {
+  it('hides Leva when debugMode is false', () => {
     ;(useStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue(false)
 
     render(
@@ -54,10 +46,9 @@ describe('DebugWrapper', () => {
 
     const leva = screen.getByTestId('leva')
     expect(leva).toHaveAttribute('data-hidden', 'true')
-    expect(screen.queryByTestId('perf')).not.toBeInTheDocument()
   })
 
-  it('shows Leva and Perf when debugMode is true', () => {
+  it('shows Leva when debugMode is true', () => {
     ;(useStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue(true)
 
     render(
@@ -67,24 +58,7 @@ describe('DebugWrapper', () => {
     )
 
     const leva = screen.getByTestId('leva')
-    const perf = screen.getByTestId('perf')
-
     expect(leva).toHaveAttribute('data-hidden', 'false')
-    expect(perf).toBeInTheDocument()
-    expect(perf).toHaveAttribute('data-position', 'top-left')
-  })
-
-  it('configures Perf with top-left position', () => {
-    ;(useStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue(true)
-
-    render(
-      <DebugWrapper>
-        <div>Content</div>
-      </DebugWrapper>
-    )
-
-    const perf = screen.getByTestId('perf')
-    expect(perf).toHaveAttribute('data-position', 'top-left')
   })
 
   it('configures Leva with hidden prop based on debugMode', () => {
