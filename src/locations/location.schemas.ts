@@ -1,3 +1,19 @@
+<<<<<<< HEAD
+export {
+  BaseLocationSchema,
+  LocationResponseSchema,
+  CreateLocationDTOSchema,
+  CreateLocationSchema,
+  UpdateLocationSchema,
+  LocationIdParamSchema,
+  type BaseLocation,
+  type LocationResponse,
+  type CreateLocationDTO,
+  type CreateLocation,
+  type UpdateLocation,
+  type LocationIdParam,
+} from "../../shared/schemas/location.schemas";
+=======
 import { z } from "zod";
 
 /**
@@ -158,3 +174,4 @@ export type CreateLocationDto = z.infer<typeof CreateLocationDTOSchema>;
 export type LocationResponseDto = z.infer<typeof LocationResponseSchema>;
 export type UpdateLocationDto = z.infer<typeof UpdateLocationSchema>;
 export type LocationHierarchyResponseDto = z.infer<typeof LocationHierarchyResponseSchema>;
+>>>>>>> origin/develop
