@@ -39,14 +39,21 @@ export function computePulseFactor(time: number, speed: number): number {
   return 0.5 + 0.5 * Math.sin(time * speed)
 }
 
-/** Fragment snippet: add rim (with pulse) to outgoingLight before it is written to gl_FragColor. */
-const RIM_FRAGMENT_SNIPPET = `
+/** Fragment snippet: add rim (with pulse) to outgoingLight. When USE_INSTANCING_COLOR is defined, multiply by vColor.rgb so per-instance color tints the rim. When useInstanceRimIntensity is true, intensity comes from vRimIntensity varying. */
+function getRimFragmentSnippet(useInstanceRimIntensity: boolean): string {
+  const intensityExpr = useInstanceRimIntensity ? 'vRimIntensity' : 'uIntensity'
+  return `
   vec3 viewDir = normalize( vViewPosition );
   float rim = 1.0 - max( 0.0, dot( normal, viewDir ) );
-  rim = pow( rim, rimPower ) * uIntensity;
+  rim = pow( rim, rimPower ) * ${intensityExpr};
   float pulse = 0.5 + 0.5 * sin( uTime * uPulseSpeed );
+  #ifdef USE_INSTANCING_COLOR
+  outgoingLight += uColor * rim * pulse * vColor.rgb;
+  #else
   outgoingLight += uColor * rim * pulse;
+  #endif
 `
+}
 
 /** Uniform declarations to inject into the fragment shader. */
 const RIM_UNIFORM_DECLARATIONS = `
@@ -68,6 +75,11 @@ export interface RimLightMaterialProps {
   uIntensity?: number
   /** Radians per second for pulse (default 2). uTime is driven by the R3F clock. */
   uPulseSpeed?: number
+  /**
+   * When true, rim intensity is read from the geometry's instance attribute `instanceRimIntensity` (float) instead of the `uIntensity` uniform.
+   * Use with InstancedMesh: set geometry.attributes.instanceRimIntensity (InstancedBufferAttribute) for per-instance hover/highlight.
+   */
+  useInstanceRimIntensity?: boolean
   [key: string]: unknown
 }
 
@@ -75,12 +87,16 @@ export interface RimLightMaterialProps {
  * MeshStandardMaterial with rim light: glowing edge from dot(viewDir, normal).
  * Pulse is controlled by uTime (from R3F clock) and uPulseSpeed.
  * Use in place of <meshStandardMaterial> for any mesh.
+ *
+ * Instancing: When used with InstancedMesh and instanceColor set, the rim term is multiplied by the instance color (USE_INSTANCING_COLOR / vColor).
+ * When useInstanceRimIntensity is true, rim intensity is read from the geometry's instanceRimIntensity attribute (float) instead of uIntensity.
  */
 export function RimLightMaterial({
   uColor: uColorProp = RIM_LIGHT_DEFAULTS.uColor,
   rimPower = RIM_LIGHT_DEFAULTS.rimPower,
   uIntensity = RIM_LIGHT_DEFAULTS.uIntensity,
   uPulseSpeed = RIM_LIGHT_DEFAULTS.uPulseSpeed,
+  useInstanceRimIntensity = false,
   ...standardProps
 }: RimLightMaterialProps) {
   const materialRef = useRef<THREE.MeshStandardMaterial>(null!)
@@ -111,16 +127,36 @@ export function RimLightMaterial({
     material.onBeforeCompile = (shader: THREE.WebGLProgramParametersWithUniforms) => {
       Object.assign(shader.uniforms, uniformsRef.current)
 
+      let fragmentDeclarations = RIM_UNIFORM_DECLARATIONS
+      if (useInstanceRimIntensity) {
+        fragmentDeclarations += '\nvarying float vRimIntensity;'
+      }
+
       shader.fragmentShader = shader.fragmentShader.replace(
         '#include <common>',
-        `#include <common>${RIM_UNIFORM_DECLARATIONS}`
+        `#include <common>${fragmentDeclarations}`
       )
       shader.fragmentShader = shader.fragmentShader.replace(
         '#include <opaque_fragment>',
-        `${RIM_FRAGMENT_SNIPPET}\n\t#include <opaque_fragment>`
+        `${getRimFragmentSnippet(useInstanceRimIntensity)}\n\t#include <opaque_fragment>`
       )
+
+      if (useInstanceRimIntensity) {
+        shader.vertexShader = shader.vertexShader.replace(
+          '#include <common>',
+          `#include <common>
+attribute float instanceRimIntensity;
+varying float vRimIntensity;
+`
+        )
+        shader.vertexShader = shader.vertexShader.replace(
+          '#include <beginnormal_vertex>',
+          `vRimIntensity = instanceRimIntensity;
+#include <beginnormal_vertex>`
+        )
+      }
     }
-  }, [])
+  }, [useInstanceRimIntensity])
 
   return <meshStandardMaterial ref={materialRef} {...standardProps} />
 }

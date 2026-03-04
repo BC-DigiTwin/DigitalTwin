@@ -13,6 +13,7 @@ import { BuildingsGroup } from './components/scene/BuildingsGroup'
 import { PathwaysGroup } from './components/scene/PathwaysGroup'
 import { TerrainGroup } from './components/scene/TerrainGroup'
 import { StressTestGroup } from './components/scene/StressTestGroup'
+import { InstancedRimExample } from './components/scene/InstancedRimExample'
 import { LoadingScreen } from './components/LoadingScreen'
 import { useStore, type LayerName } from './store/useStore'
 import './App.css'
@@ -40,6 +41,7 @@ function LayerToggles() {
     Pathways: pathways,
     Terrain: terrain,
     'Stress Test': stressTest,
+    'Instanced Rim': instancedRim,
   } = useControls(
     'Layer Visibility',
     {
@@ -49,6 +51,7 @@ function LayerToggles() {
       Pathways: { value: initialRef.current.pathways },
       Terrain: { value: initialRef.current.terrain },
       'Stress Test': { value: initialRef.current.stressTest },
+      'Instanced Rim': { value: initialRef.current.instancedRim ?? false },
     },
     { collapsed: false },
   )
@@ -61,11 +64,12 @@ function LayerToggles() {
       ['pathways', pathways],
       ['terrain', terrain],
       ['stressTest', stressTest],
+      ['instancedRim', instancedRim],
     ]
     for (const [layer, visible] of entries) {
       setLayerVisible(layer, visible)
     }
-  }, [lighting, environment, buildings, pathways, terrain, stressTest, setLayerVisible])
+  }, [lighting, environment, buildings, pathways, terrain, stressTest, instancedRim, setLayerVisible])
 
   return null
 }
@@ -135,6 +139,7 @@ export default function App() {
             <TerrainGroup />
             <PathwaysGroup />
             <StressTestGroup />
+            <InstancedRimExample />
 
             {/* Asset-heavy layers suspend until loaded; errors are caught
                 and surfaced via the HTML overlay (LoadingScreen).

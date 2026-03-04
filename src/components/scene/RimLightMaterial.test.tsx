@@ -88,4 +88,14 @@ describe('RimLightMaterial', () => {
       )
     ).not.toThrow()
   })
+
+  it('accepts useInstanceRimIntensity and renders without throwing', () => {
+    expect(() =>
+      render(
+        <div data-testid="wrapper">
+          <RimLightMaterial color="#888888" useInstanceRimIntensity />
+        </div>
+      )
+    ).not.toThrow()
+  })
 })
