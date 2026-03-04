@@ -4,6 +4,7 @@ import * as THREE from 'three'
 import { useStore } from '../../store/useStore'
 import { useAssetLoader } from '../../hooks/useAssetLoader'
 import { gpsToWorldPosition } from '../../utils/gps'
+import { setPointerCursor } from '../../utils/pointerCursor'
 import { WORLD_ORIGIN } from '../../constants/coordinates'
 import { RimLightMaterial } from './RimLightMaterial'
 
@@ -59,10 +60,12 @@ function SceneNode({
         receiveShadow
         onPointerOver={(e: ThreeEvent<PointerEvent>) => {
           e.stopPropagation()
+          setPointerCursor(true)
           setHoveredBuildingId(buildingId)
         }}
         onPointerOut={(e: ThreeEvent<PointerEvent>) => {
           e.stopPropagation()
+          setPointerCursor(false)
           setHoveredBuildingId(null)
         }}
       >

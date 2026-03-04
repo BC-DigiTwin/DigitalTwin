@@ -23,6 +23,7 @@ import { AssetErrorBoundary } from './components/AssetErrorBoundary'
 import { PlaceholderBox } from './components/PlaceholderBox'
 import { RimLightMaterial } from './components/scene/RimLightMaterial'
 import { useHydrateLocations } from './hooks/useHydrateLocations'
+import { setPointerCursor } from './utils/pointerCursor'
 
 /**
  * Leva panel that exposes scene-layer visibility toggles backed by Zustand.
@@ -157,10 +158,12 @@ export default function App() {
               position={[0, 5, 0]}
               onPointerOver={(event: ThreeEvent<PointerEvent>) => {
                 event.stopPropagation()
+                setPointerCursor(true)
                 setDebugCubeHovered(true)
               }}
               onPointerOut={(event: ThreeEvent<PointerEvent>) => {
                 event.stopPropagation()
+                setPointerCursor(false)
                 setDebugCubeHovered(false)
               }}
             >
