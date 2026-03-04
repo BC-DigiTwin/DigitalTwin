@@ -8,7 +8,7 @@ export type ViewMode = 'indoor' | 'outdoor'
  * so both frontend and shared code can rely on it.
  */
 export interface LocationStoreState {
-  
+
   //Full location hierarchy tree as returned by GET /api/hierarchy. 
   hierarchy: LocationNode[]
  
@@ -41,7 +41,5 @@ export interface LocationStoreActions {
   setError(error: string | null): void
 }
 
-
 //Convenience type for the complete Location Store contract.
 export type LocationStore = LocationStoreState & LocationStoreActions
-

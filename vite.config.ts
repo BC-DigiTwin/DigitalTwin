@@ -7,7 +7,9 @@ export default defineConfig({
   plugins: [react()],
   test: {
     globals: true,
-    environment: 'node',
+    environment: 'jsdom',
+    setupFiles: ['src/test-setup.ts'],
+    exclude: ['**/node_modules/**', '**/dist/**', 'backend/tests/**'],
   },
   // 1. Force Vite to treat 3D models as static assets
   assetsInclude: ['**/*.glb', '**/*.gltf'],

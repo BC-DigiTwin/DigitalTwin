@@ -11,6 +11,7 @@ export type LayerName =
     | 'pathways'
     | 'terrain'
     | 'stressTest'
+    | 'instancedRim'
 
 export interface LayerVisibility {
     lighting: boolean
@@ -19,6 +20,7 @@ export interface LayerVisibility {
     pathways: boolean
     terrain: boolean
     stressTest: boolean
+    instancedRim: boolean
 }
 
 const DEFAULT_LAYER_VISIBILITY: LayerVisibility = {
@@ -28,6 +30,7 @@ const DEFAULT_LAYER_VISIBILITY: LayerVisibility = {
     pathways: true,
     terrain: true,
     stressTest: false,
+    instancedRim: false,
 }
 
 /* ── Store shape ────────────────────────────────────────────────── */

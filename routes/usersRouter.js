@@ -1,5 +1,7 @@
+
 const express = require('express');
 const router = express.Router();
+const { LoginSchema } = require('../shared/schemas/auth');
 
 // GET all users
 router.get('/', (req, res) => {
@@ -41,7 +43,15 @@ router.post('/register', (req, res) => {
 // LOGIN user
 router.post('/login', (req, res) => {
   try {
-    const { email, password } = req.body;
+    const parseResult = LoginSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Validation failed',
+        errors: parseResult.error.errors,
+      });
+    }
+    const { email, password } = parseResult.data;
     // TODO: Authenticate user and create session/token
     res.status(200).json({
       status: 'success',
