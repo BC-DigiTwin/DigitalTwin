@@ -14,12 +14,13 @@ import { PathwaysGroup } from './components/scene/PathwaysGroup'
 import { TerrainGroup } from './components/scene/TerrainGroup'
 import { StressTestGroup } from './components/scene/StressTestGroup'
 import { LoadingScreen } from './components/LoadingScreen'
-import { Model as Campus } from './components/Campus'
 import { useStore, type LayerName } from './store/useStore'
 import './App.css'
 import { ACESFilmicToneMapping, SRGBColorSpace } from 'three'
+import { RENDER_LAYERS } from './constants/renderLayers'
 import { DebugWrapper } from './components/DebugWrapper'
 import { AssetErrorBoundary } from './components/AssetErrorBoundary'
+import { RaycastDebugger } from './components/debug/RaycastDebugger'
 import { PlaceholderBox } from './components/PlaceholderBox'
 import { useHydrateLocations } from './hooks/useHydrateLocations'
 
@@ -116,9 +117,10 @@ export default function App() {
 
         <Canvas
           dpr={[1, 2]}
-          onCreated={({ gl }) => {
+          onCreated={({ gl, raycaster }) => {
             gl.toneMapping = ACESFilmicToneMapping
             gl.outputColorSpace = SRGBColorSpace
+            raycaster.layers.set(RENDER_LAYERS.INTERACTIVE)
           }}
         >
           <CameraControlProvider>
@@ -141,10 +143,11 @@ export default function App() {
               fallback={<PlaceholderBox size={[80, 12, 80]} />}
             >
               <Suspense fallback={null}>
-                <Campus />
                 <BuildingsGroup />
               </Suspense>
             </AssetErrorBoundary>
+
+            <RaycastDebugger />
 
             {/* Debug: Simple test cube at origin to verify rendering */}
             <mesh position={[0, 5, 0]}>
