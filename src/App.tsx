@@ -1,5 +1,5 @@
-import { Suspense, useEffect, useRef } from 'react'
-import { Canvas } from '@react-three/fiber'
+import { Suspense, useEffect, useRef, useState } from 'react'
+import { Canvas, type ThreeEvent } from '@react-three/fiber'
 import { useControls, button } from 'leva'
 import { Perf } from 'r3f-perf'
 import { CameraRig, DEFAULT_CAMERA_SETTINGS } from './components/CameraRig'
@@ -13,15 +13,17 @@ import { BuildingsGroup } from './components/scene/BuildingsGroup'
 import { PathwaysGroup } from './components/scene/PathwaysGroup'
 import { TerrainGroup } from './components/scene/TerrainGroup'
 import { StressTestGroup } from './components/scene/StressTestGroup'
+import { InstancedRimExample } from './components/scene/InstancedRimExample'
 import { LoadingScreen } from './components/LoadingScreen'
-import { Model as Campus } from './components/Campus'
 import { useStore, type LayerName } from './store/useStore'
 import './App.css'
 import { ACESFilmicToneMapping, SRGBColorSpace } from 'three'
 import { DebugWrapper } from './components/DebugWrapper'
 import { AssetErrorBoundary } from './components/AssetErrorBoundary'
 import { PlaceholderBox } from './components/PlaceholderBox'
+import { RimLightMaterial } from './components/scene/RimLightMaterial'
 import { useHydrateLocations } from './hooks/useHydrateLocations'
+import { setPointerCursor } from './utils/pointerCursor'
 
 /**
  * Leva panel that exposes scene-layer visibility toggles backed by Zustand.
@@ -40,6 +42,7 @@ function LayerToggles() {
     Pathways: pathways,
     Terrain: terrain,
     'Stress Test': stressTest,
+    'Instanced Rim': instancedRim,
   } = useControls(
     'Layer Visibility',
     {
@@ -49,6 +52,7 @@ function LayerToggles() {
       Pathways: { value: initialRef.current.pathways },
       Terrain: { value: initialRef.current.terrain },
       'Stress Test': { value: initialRef.current.stressTest },
+      'Instanced Rim': { value: initialRef.current.instancedRim ?? false },
     },
     { collapsed: false },
   )
@@ -61,11 +65,12 @@ function LayerToggles() {
       ['pathways', pathways],
       ['terrain', terrain],
       ['stressTest', stressTest],
+      ['instancedRim', instancedRim],
     ]
     for (const [layer, visible] of entries) {
       setLayerVisible(layer, visible)
     }
-  }, [lighting, environment, buildings, pathways, terrain, stressTest, setLayerVisible])
+  }, [lighting, environment, buildings, pathways, terrain, stressTest, instancedRim, setLayerVisible])
 
   return null
 }
@@ -107,7 +112,9 @@ function CameraRigWithControls() {
 
 export default function App() {
   useHydrateLocations()
-  
+
+  const [debugCubeHovered, setDebugCubeHovered] = useState(false)
+
   return (
     <DebugWrapper>
       <div className="canvas-container">
@@ -133,6 +140,7 @@ export default function App() {
             <TerrainGroup />
             <PathwaysGroup />
             <StressTestGroup />
+            <InstancedRimExample />
 
             {/* Asset-heavy layers suspend until loaded; errors are caught
                 and surfaced via the HTML overlay (LoadingScreen).
@@ -141,15 +149,31 @@ export default function App() {
               fallback={<PlaceholderBox size={[80, 12, 80]} />}
             >
               <Suspense fallback={null}>
-                <Campus />
                 <BuildingsGroup />
               </Suspense>
             </AssetErrorBoundary>
 
-            {/* Debug: Simple test cube at origin to verify rendering */}
-            <mesh position={[0, 5, 0]}>
+            {/* Debug: Simple test cube at origin to verify rendering (rim light + pulse) */}
+            <mesh
+              position={[0, 5, 0]}
+              onPointerOver={(event: ThreeEvent<PointerEvent>) => {
+                event.stopPropagation()
+                setPointerCursor(true)
+                setDebugCubeHovered(true)
+              }}
+              onPointerOut={(event: ThreeEvent<PointerEvent>) => {
+                event.stopPropagation()
+                setPointerCursor(false)
+                setDebugCubeHovered(false)
+              }}
+            >
               <boxGeometry args={[5, 5, 5]} />
-              <meshStandardMaterial color="orange" />
+              <RimLightMaterial
+                color="orange"
+                uColor="#00ffff"
+                uIntensity={debugCubeHovered ? 1 : 0}
+                uPulseSpeed={2}
+              />
             </mesh>
           </CameraControlProvider>
         </Canvas>

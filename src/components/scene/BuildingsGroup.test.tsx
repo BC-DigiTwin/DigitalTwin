@@ -1,0 +1,44 @@
+/**
+ * @vitest-environment jsdom
+ */
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { render } from '@testing-library/react'
+import { BuildingsGroup, CAMPUS_GLB_PATH } from './BuildingsGroup'
+import { useAssetLoader } from '../../hooks/useAssetLoader'
+
+const mockScene = { children: [], uuid: 'scene' }
+
+vi.mock('@react-three/fiber', () => ({
+  ...vi.importActual('@react-three/fiber'),
+  Canvas: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="canvas">{children}</div>
+  ),
+  useFrame: (fn: () => void) => {
+    fn()
+  },
+  useThree: (selector?: (s: { clock: { getElapsedTime: () => number } }) => unknown) =>
+    selector ? selector({ clock: { getElapsedTime: () => 0 } }) : { clock: { getElapsedTime: () => 0 } },
+}))
+
+vi.mock('../../hooks/useAssetLoader', () => ({
+  useAssetLoader: Object.assign(vi.fn(), { preload: vi.fn() }),
+}))
+
+vi.mock('../../utils/gps', () => ({
+  gpsToWorldPosition: () => ({ x: 0, y: 0, z: 0 }),
+}))
+
+describe('BuildingsGroup', () => {
+  beforeEach(() => {
+    vi.mocked(useAssetLoader).mockReturnValue({ scene: mockScene } as never)
+  })
+
+  it('renders without crashing', () => {
+    expect(() => render(<BuildingsGroup />)).not.toThrow()
+  })
+
+  it('loads the campus greybox from the expected path', () => {
+    render(<BuildingsGroup />)
+    expect(useAssetLoader).toHaveBeenCalledWith(CAMPUS_GLB_PATH)
+  })
+})
