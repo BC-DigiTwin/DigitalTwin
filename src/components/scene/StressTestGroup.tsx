@@ -1,15 +1,23 @@
+import { useRef } from 'react'
 import { useControls } from 'leva'
+import type { Group } from 'three'
 import { useStore } from '../../store/useStore'
+import { useRenderLayer } from '../../hooks/useInteractiveLayer'
+import { RENDER_LAYERS } from '../../constants/renderLayers'
 
 /**
  * Stress test: renders 500+ meshes to verify r3f-perf and frame-loop
  * stability.  Visibility is driven by the global Zustand
  * `layers.stressTest` flag (off by default).
  *
+ * Tagged with `RENDER_LAYERS.DEBUG` (layer 5) — the raycaster ignores it.
  * Mesh count is tuneable via Leva while the layer is visible.
  */
 export function StressTestGroup() {
   const visible = useStore((s) => s.layers.stressTest)
+  const groupRef = useRef<Group>(null)
+
+  useRenderLayer(groupRef.current, RENDER_LAYERS.DEBUG)
 
   const { count } = useControls(
     'Stress Test',
@@ -41,5 +49,5 @@ export function StressTestGroup() {
     )
   })
 
-  return <group name="StressTestGroup">{meshes}</group>
+  return <group ref={groupRef} name="StressTestGroup">{meshes}</group>
 }

@@ -1,4 +1,8 @@
+import { useRef } from 'react'
+import type { Group } from 'three'
 import { useStore } from '../../store/useStore'
+import { useRenderLayer } from '../../hooks/useInteractiveLayer'
+import { RENDER_LAYERS } from '../../constants/renderLayers'
 import { PLACEHOLDER_COLORS } from '../../constants/sceneMaterials'
 
 const COLOR = PLACEHOLDER_COLORS.pathways
@@ -17,14 +21,17 @@ const PATHWAYS: [number, number, number, number][] = [
  * Scene-graph group for walkways, roads, and pathway placeholders.
  *
  * Visibility is driven by the global Zustand `layers.pathways` flag.
- * Each segment is a flat amber box sitting just above the terrain plane
- * so it's clearly distinct from both buildings and ground.
+ * Tagged with `RENDER_LAYERS.PATHWAYS` (layer 4) — the raycaster
+ * ignores it.
  */
 export function PathwaysGroup() {
   const visible = useStore((s) => s.layers.pathways)
+  const groupRef = useRef<Group>(null)
+
+  useRenderLayer(groupRef.current, RENDER_LAYERS.PATHWAYS)
 
   return (
-    <group name="PathwaysGroup" visible={visible}>
+    <group ref={groupRef} name="PathwaysGroup" visible={visible}>
       {PATHWAYS.map(([x, z, w, d], i) => (
         <mesh
           key={i}

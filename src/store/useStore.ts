@@ -42,6 +42,8 @@ export interface AppState {
     debugMode: boolean
     appState: 'initial' | 'loading' | 'ready' | 'error'
     assetError: string | null
+    hoveredId: string | null
+    selectedId: string | null
     layers: LayerVisibility
 }
 
@@ -52,6 +54,8 @@ export interface AppActions {
     setDebugMode: (mode: boolean) => void
     setAppState: (state: AppState['appState']) => void
     setAssetError: (error: string | null) => void
+    setHoveredId: (id: string | null) => void
+    setSelectedId: (id: string | null) => void
     toggleLayer: (layer: LayerName) => void
     setLayerVisible: (layer: LayerName, visible: boolean) => void
 }
@@ -77,6 +81,8 @@ export const useStore = create<Store>()(
             debugMode: true,
             appState: 'initial',
             assetError: null,
+            hoveredId: null,
+            selectedId: null,
             layers: { ...DEFAULT_LAYER_VISIBILITY },
 
             // Actions
@@ -88,6 +94,12 @@ export const useStore = create<Store>()(
 
             setAssetError: (error: string | null) =>
                 set({ assetError: error }, false, 'setAssetError'),
+
+            setHoveredId: (id: string | null) =>
+                set({ hoveredId: id }, false, 'setHoveredId'),
+
+            setSelectedId: (id: string | null) =>
+                set({ selectedId: id }, false, 'setSelectedId'),
 
             toggleLayer: (layer: LayerName) =>
                 set(

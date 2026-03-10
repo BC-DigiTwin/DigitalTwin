@@ -1,8 +1,10 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import type { ThreeEvent } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useStore } from '../../store/useStore'
 import { useAssetLoader } from '../../hooks/useAssetLoader'
+import { useInteractiveLayer } from '../../hooks/useInteractiveLayer'
+import { useClickDragThreshold } from '../../hooks/useClickDragThreshold'
 import { gpsToWorldPosition } from '../../utils/gps'
 import { setPointerCursor } from '../../utils/pointerCursor'
 import { WORLD_ORIGIN } from '../../constants/coordinates'
@@ -108,18 +110,32 @@ function SceneNode({
  * with RimLightMaterial and pointer events so hovering a building creates
  * the rim glow (issues 96–97: rim light shader, uColor/uIntensity uniforms).
  * Visibility is driven by the global Zustand `layers.buildings` flag.
+ *
+ * All meshes are added to the INTERACTIVE render layer so the
+ * raycaster can hit-test them for selection / hover events.
+ * Click events use a drag-threshold check so camera pans are ignored.
  */
 export function BuildingsGroup() {
   const [hoveredBuildingId, setHoveredBuildingId] = useState<string | null>(null)
   const visible = useStore((s) => s.layers.buildings)
   const gltf = useAssetLoader(CAMPUS_GLB_PATH)
 
+  useInteractiveLayer(gltf.scene)
+
   const position = gpsToWorldPosition(WORLD_ORIGIN.lat, WORLD_ORIGIN.lon)
 
   const scene = useMemo(() => gltf.scene, [gltf.scene])
 
+  const handleClick = useCallback((e: ThreeEvent<MouseEvent>) => {
+    e.stopPropagation()
+    const name = e.object.name || e.object.parent?.name || '(unnamed)'
+    console.log('[BuildingsGroup] clicked:', name, e.point)
+  }, [])
+
+  const clickHandlers = useClickDragThreshold(handleClick)
+
   return (
-    <group name="BuildingsGroup" visible={visible} position={position}>
+    <group name="BuildingsGroup" visible={visible} position={position} {...clickHandlers}>
       {scene.children.map((child) => (
         <SceneNode
           key={child.uuid}

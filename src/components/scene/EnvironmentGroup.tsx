@@ -1,16 +1,23 @@
+import { useRef } from 'react'
 import { useControls } from 'leva'
+import type { Group } from 'three'
 import { useStore } from '../../store/useStore'
+import { useRenderLayer } from '../../hooks/useInteractiveLayer'
+import { RENDER_LAYERS } from '../../constants/renderLayers'
 
 /**
  * Scene-graph group that owns environmental / helper visuals:
  * world-origin axes, ground grid, sky, fog, etc.
  *
  * Visibility is driven by the global Zustand `layers.environment` flag.
- * Everything here is non-interactive scenery that helps orient the
- * viewer without being a "building" or model asset.
+ * Tagged with `RENDER_LAYERS.ENVIRONMENT` (layer 2) — the raycaster
+ * ignores everything here.
  */
 export function EnvironmentGroup() {
   const visible = useStore((s) => s.layers.environment)
+  const groupRef = useRef<Group>(null)
+
+  useRenderLayer(groupRef.current, RENDER_LAYERS.ENVIRONMENT)
 
   const {
     'Show Axes': showAxes,
@@ -29,7 +36,7 @@ export function EnvironmentGroup() {
   )
 
   return (
-    <group name="EnvironmentGroup" visible={visible}>
+    <group ref={groupRef} name="EnvironmentGroup" visible={visible}>
       {showAxes && <axesHelper args={[3]} />}
       {showGrid && (
         <gridHelper args={[gridSize, gridDivisions, '#444', '#222']} />
