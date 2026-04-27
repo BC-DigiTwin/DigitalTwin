@@ -17,6 +17,7 @@ export const CAMPUS_GLB_PATH = '/models/campus_greybox.glb'
 useAssetLoader.preload(CAMPUS_GLB_PATH)
 
 const RIM_GLOW_COLOR = '#00ffff'
+const STRIPPED_MATERIAL = new THREE.MeshBasicMaterial({ color: '#888888' })
 
 function getMaterialColor(material: THREE.Material | THREE.Material[]): string | number {
   const mat = Array.isArray(material) ? material[0] : material
@@ -40,6 +41,35 @@ export interface BuildingMeshNode {
   meshName: string
   buildingId: string
   buildingName: string
+}
+
+/**
+ * Removes imported mesh materials from a loaded GLB scene and disposes them.
+ * We keep one shared lightweight fallback material so the source graph remains
+ * valid while avoiding many unique Blender material allocations.
+ */
+export function stripImportedMaterials(root: THREE.Object3D): number {
+  if (root.userData.__materialsStripped === true) {
+    return 0
+  }
+
+  let strippedCount = 0
+  root.traverse((obj) => {
+    if (obj.type !== 'Mesh') return
+
+    const mesh = obj as THREE.Mesh
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+    materials.forEach((material) => {
+      if (material) {
+        material.dispose()
+        strippedCount += 1
+      }
+    })
+    mesh.material = STRIPPED_MATERIAL
+  })
+
+  root.userData.__materialsStripped = true
+  return strippedCount
 }
 
 /**
@@ -171,7 +201,10 @@ export function BuildingsGroup() {
 
   const position = gpsToWorldPosition(WORLD_ORIGIN.lat, WORLD_ORIGIN.lon)
 
-  const scene = useMemo(() => gltf.scene, [gltf.scene])
+  const scene = useMemo(() => {
+    stripImportedMaterials(gltf.scene)
+    return gltf.scene
+  }, [gltf.scene])
   const buildingMeshNodes = useMemo(() => collectBuildingMeshNodes(scene), [scene])
   const meshToBuildingMap = useMemo(
     () => new Map(buildingMeshNodes.map((entry) => [entry.meshId, entry])),
