@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
 import type { ThreeEvent } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useStore } from '../../store/useStore'
@@ -32,6 +32,53 @@ interface SceneNodeProps {
   setHoveredBuildingId: (id: string | null) => void
   /** UUID of the parent group that represents this building (walls + roof share this). */
   buildingId: string | null
+}
+
+export interface BuildingMeshNode {
+  mesh: THREE.Mesh
+  meshId: string
+  meshName: string
+  buildingId: string
+  buildingName: string
+}
+
+/**
+ * Recursively walks a loaded GLB scene and returns every mesh node.
+ * Each mesh is tagged with the nearest parent "building" group so callers can
+ * treat all child parts (walls, roof, etc.) as one selectable building.
+ */
+export function collectBuildingMeshNodes(
+  node: THREE.Object3D,
+  parentBuilding: { id: string; name: string } | null = null,
+): BuildingMeshNode[] {
+  const nextBuilding =
+    parentBuilding ??
+    (node.type === 'Scene'
+      ? null
+      : {
+          id: node.uuid,
+          name: node.name || 'Unnamed building',
+        })
+
+  if (node.type === 'Mesh') {
+    const mesh = node as THREE.Mesh
+    const building = parentBuilding ?? {
+      id: mesh.uuid,
+      name: mesh.name || 'Unnamed building',
+    }
+
+    return [
+      {
+        mesh,
+        meshId: mesh.uuid,
+        meshName: mesh.name || 'Unnamed mesh',
+        buildingId: building.id,
+        buildingName: building.name,
+      },
+    ]
+  }
+
+  return node.children.flatMap((child) => collectBuildingMeshNodes(child, nextBuilding))
 }
 
 /**
@@ -125,12 +172,26 @@ export function BuildingsGroup() {
   const position = gpsToWorldPosition(WORLD_ORIGIN.lat, WORLD_ORIGIN.lon)
 
   const scene = useMemo(() => gltf.scene, [gltf.scene])
+  const buildingMeshNodes = useMemo(() => collectBuildingMeshNodes(scene), [scene])
+  const meshToBuildingMap = useMemo(
+    () => new Map(buildingMeshNodes.map((entry) => [entry.meshId, entry])),
+    [buildingMeshNodes],
+  )
+
+  useEffect(() => {
+    console.info(`[BuildingsGroup] loaded ${buildingMeshNodes.length} building mesh nodes`)
+  }, [buildingMeshNodes])
 
   const handleClick = useCallback((e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation()
-    const name = e.object.name || e.object.parent?.name || '(unnamed)'
+    const meshEntry = meshToBuildingMap.get(e.object.uuid)
+    const name =
+      meshEntry?.buildingName ??
+      e.object.name ??
+      e.object.parent?.name ??
+      '(unnamed)'
     console.log('[BuildingsGroup] clicked:', name, e.point)
-  }, [])
+  }, [meshToBuildingMap])
 
   const clickHandlers = useClickDragThreshold(handleClick)
 
