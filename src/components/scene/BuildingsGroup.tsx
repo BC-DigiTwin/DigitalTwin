@@ -7,6 +7,7 @@ import {
   useRef,
 } from 'react'
 import type { ThreeEvent } from '@react-three/fiber'
+import { Edges } from '@react-three/drei'
 import * as THREE from 'three'
 import { useStore } from '../../store/useStore'
 import { useAssetLoader } from '../../hooks/useAssetLoader'
@@ -122,45 +123,6 @@ export function collectBuildingMeshNodes(
   }
 
   return node.children.flatMap((child) => collectBuildingMeshNodes(child, nextBuilding))
-}
-
-/** Crease / outline lines (separate color from filled faces). */
-function BlueprintEdgeOverlay({
-  geometry,
-  threshold,
-  color,
-  opacity,
-  visible,
-}: {
-  geometry: THREE.BufferGeometry
-  threshold: number
-  color: string
-  opacity: number
-  visible: boolean
-}) {
-  const edgesGeometry = useMemo(
-    () => new THREE.EdgesGeometry(geometry, threshold),
-    [geometry, threshold],
-  )
-
-  useEffect(() => {
-    return () => {
-      edgesGeometry.dispose()
-    }
-  }, [edgesGeometry])
-
-  if (!visible) return null
-
-  return (
-    <lineSegments geometry={edgesGeometry}>
-      <lineBasicMaterial
-        color={color}
-        transparent={opacity < 1}
-        opacity={opacity}
-        depthWrite={false}
-      />
-    </lineSegments>
-  )
 }
 
 const BUILDING_GRID_VERTEX_SHADER = /* glsl */ `
@@ -325,14 +287,16 @@ function SceneNode({
             uColor={RIM_GLOW_COLOR}
             uIntensity={isHovered ? 1 : 0}
           />
+          {blueprint.showEdges ? (
+            <Edges
+              threshold={blueprint.edgeThreshold}
+              color={blueprint.edgeColor}
+              transparent={blueprint.edgeOpacity < 1}
+              opacity={blueprint.edgeOpacity}
+              depthWrite={false}
+            />
+          ) : null}
         </mesh>
-        <BlueprintEdgeOverlay
-          geometry={mesh.geometry}
-          threshold={blueprint.edgeThreshold}
-          color={blueprint.edgeColor}
-          opacity={blueprint.edgeOpacity}
-          visible={blueprint.showEdges}
-        />
         <BuildingSquareGridOverlay
           geometry={mesh.geometry}
           color={blueprint.buildingGridColor}
@@ -375,6 +339,7 @@ function SceneNode({
  * per gpsToWorldPosition + WORLD_ORIGIN). Each mesh in the GLB is rendered
  * with RimLightMaterial and pointer events so hovering a building creates
  * the rim glow (issues 96–97: rim light shader, uColor/uIntensity uniforms).
+ * Crease lines use @react-three/drei `Edges` as a child of each building mesh (#162).
  * Visibility is driven by the global Zustand `layers.buildings` flag.
  *
  * All meshes are added to the INTERACTIVE render layer so the
