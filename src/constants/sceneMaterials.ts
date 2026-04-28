@@ -19,11 +19,11 @@ export interface BlueprintBuildingMaterialSettings {
   opacity: number
   emissiveIntensity: number
   doubleSide: boolean
-  /** Crease / silhouette lines (`EdgesGeometry`) — separate tint from faces. */
+  /** Crease / silhouette lines (`@react-three/drei` `<Edges>` / Line2) — separate tint from faces. */
   edgeColor: string
   edgeOpacity: number
   showEdges: boolean
-  /** Degrees between face normals below which two faces are smoothed together (Three.js `EdgesGeometry`). Higher = fewer lines. */
+  /** Degrees between face normals below which two faces are smoothed together (drei `<Edges>` / `EdgesGeometry`). Higher = fewer lines. */
   edgeThreshold: number
   /** World-axis square grid on façades (triplanar shader overlay). */
   showBuildingGrid: boolean
