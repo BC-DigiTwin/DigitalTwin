@@ -7,9 +7,9 @@
  *   Layer 0 — DEFAULT        Camera renders everything on this layer.
  *   Layer 1 — INTERACTIVE    Raycaster-only.  Buildings and other
  *                             clickable / hoverable objects.
- *   Layer 2 — ENVIRONMENT    Grid, axes, sky — non-interactive scenery.
+ *   Layer 2 — ENVIRONMENT    Reserved (non-interactive scenery; unused).
  *   Layer 3 — TERRAIN        Ground plane.
- *   Layer 4 — PATHWAYS       Walkways / roads.
+ *   Layer 4 — PATHWAYS       Reserved (no pathway meshes in scene currently).
  *   Layer 5 — DEBUG          Stress test, helper meshes, perf overlays.
  *
  * The Canvas raycaster is set to test Layer 1 only, so pointer events
