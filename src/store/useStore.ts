@@ -1,33 +1,32 @@
 import { create } from 'zustand'
 import { devtools } from 'zustand/middleware'
+import {
+    type BlueprintBuildingMaterialSettings,
+    BLUEPRINT_BUILDING_DEFAULTS,
+    type TerrainGroundMaterialSettings,
+    TERRAIN_GROUND_DEFAULTS,
+    TERRAIN_GROUND_GRID_COLOR,
+    SCENE_BACKGROUND_DEFAULT,
+} from '../constants/sceneMaterials'
 
 /* ── Layer visibility ───────────────────────────────────────────── */
 
 /** Every toggleable scene-graph layer. */
 export type LayerName =
-    | 'lighting'
-    | 'environment'
     | 'buildings'
-    | 'pathways'
     | 'terrain'
     | 'stressTest'
     | 'instancedRim'
 
 export interface LayerVisibility {
-    lighting: boolean
-    environment: boolean
     buildings: boolean
-    pathways: boolean
     terrain: boolean
     stressTest: boolean
     instancedRim: boolean
 }
 
 const DEFAULT_LAYER_VISIBILITY: LayerVisibility = {
-    lighting: true,
-    environment: true,
     buildings: true,
-    pathways: true,
     terrain: true,
     stressTest: false,
     instancedRim: false,
@@ -45,6 +44,17 @@ export interface AppState {
     hoveredId: string | null
     selectedId: string | null
     layers: LayerVisibility
+    blueprintBuildingMaterial: BlueprintBuildingMaterialSettings
+    terrainGroundMaterial: TerrainGroundMaterialSettings
+    /** Solid grass/ground mesh (can be off while grid stays visible). */
+    terrainShowGroundPlane: boolean
+    /** Grid lines on the terrain footprint (independent of ground plane). */
+    terrainShowGrid: boolean
+    terrainGridLineColor: string
+    /** Three.js `scene.background` (viewport clear color). */
+    sceneBackgroundColor: string
+    /** Stress test instanced mesh grid count (see Layer Visibility when stress layer is on). */
+    stressTestMeshCount: number
 }
 
 /**
@@ -58,6 +68,13 @@ export interface AppActions {
     setSelectedId: (id: string | null) => void
     toggleLayer: (layer: LayerName) => void
     setLayerVisible: (layer: LayerName, visible: boolean) => void
+    setBlueprintBuildingMaterial: (partial: Partial<BlueprintBuildingMaterialSettings>) => void
+    setTerrainGroundMaterial: (partial: Partial<TerrainGroundMaterialSettings>) => void
+    setTerrainShowGroundPlane: (show: boolean) => void
+    setTerrainShowGrid: (show: boolean) => void
+    setTerrainGridLineColor: (color: string) => void
+    setSceneBackgroundColor: (color: string) => void
+    setStressTestMeshCount: (count: number) => void
 }
 
 /**
@@ -84,6 +101,13 @@ export const useStore = create<Store>()(
             hoveredId: null,
             selectedId: null,
             layers: { ...DEFAULT_LAYER_VISIBILITY },
+            blueprintBuildingMaterial: { ...BLUEPRINT_BUILDING_DEFAULTS },
+            terrainGroundMaterial: { ...TERRAIN_GROUND_DEFAULTS },
+            terrainShowGroundPlane: true,
+            terrainShowGrid: true,
+            terrainGridLineColor: TERRAIN_GROUND_GRID_COLOR,
+            sceneBackgroundColor: SCENE_BACKGROUND_DEFAULT,
+            stressTestMeshCount: 600,
 
             // Actions
             setDebugMode: (mode: boolean) =>
@@ -114,6 +138,45 @@ export const useStore = create<Store>()(
                     false,
                     `setLayerVisible/${layer}`,
                 ),
+
+            setBlueprintBuildingMaterial: (partial) =>
+                set(
+                    (s) => ({
+                        blueprintBuildingMaterial: {
+                            ...s.blueprintBuildingMaterial,
+                            ...partial,
+                        },
+                    }),
+                    false,
+                    'setBlueprintBuildingMaterial',
+                ),
+
+            setTerrainGroundMaterial: (partial) =>
+                set(
+                    (s) => ({
+                        terrainGroundMaterial: {
+                            ...s.terrainGroundMaterial,
+                            ...partial,
+                        },
+                    }),
+                    false,
+                    'setTerrainGroundMaterial',
+                ),
+
+            setTerrainShowGroundPlane: (show) =>
+                set({ terrainShowGroundPlane: show }, false, 'setTerrainShowGroundPlane'),
+
+            setTerrainShowGrid: (show) =>
+                set({ terrainShowGrid: show }, false, 'setTerrainShowGrid'),
+
+            setTerrainGridLineColor: (color) =>
+                set({ terrainGridLineColor: color }, false, 'setTerrainGridLineColor'),
+
+            setSceneBackgroundColor: (color) =>
+                set({ sceneBackgroundColor: color }, false, 'setSceneBackgroundColor'),
+
+            setStressTestMeshCount: (count) =>
+                set({ stressTestMeshCount: count }, false, 'setStressTestMeshCount'),
         }),
         {
             name: 'TwinCampus-Store', // Name shown in Redux DevTools

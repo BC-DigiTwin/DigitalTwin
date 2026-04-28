@@ -68,6 +68,8 @@ export function InstancedRimExample() {
       >
         <RimLightMaterial
           color="#888888"
+          emissive="#888888"
+          emissiveIntensity={1}
           uColor="#00ffff"
           uIntensity={0}
           useInstanceRimIntensity
