@@ -1,5 +1,5 @@
-import { Suspense, useEffect, useRef, useState } from 'react'
-import { Canvas, type ThreeEvent } from '@react-three/fiber'
+import { Suspense, useEffect, useRef } from 'react'
+import { Canvas } from '@react-three/fiber'
 import { useControls, button } from 'leva'
 import { Perf } from 'r3f-perf'
 import { CameraRig, DEFAULT_CAMERA_SETTINGS } from './components/CameraRig'
@@ -7,10 +7,7 @@ import {
   CameraControlProvider,
   useCameraControl,
 } from './contexts/CameraControlContext'
-import { LightingGroup } from './components/scene/LightingGroup'
-import { EnvironmentGroup } from './components/scene/EnvironmentGroup'
 import { BuildingsGroup } from './components/scene/BuildingsGroup'
-import { PathwaysGroup } from './components/scene/PathwaysGroup'
 import { TerrainGroup } from './components/scene/TerrainGroup'
 import { StressTestGroup } from './components/scene/StressTestGroup'
 import { InstancedRimExample } from './components/scene/InstancedRimExample'
@@ -21,11 +18,9 @@ import { ACESFilmicToneMapping, SRGBColorSpace } from 'three'
 import { RENDER_LAYERS } from './constants/renderLayers'
 import { DebugWrapper } from './components/DebugWrapper'
 import { AssetErrorBoundary } from './components/AssetErrorBoundary'
-import { RaycastDebugger } from './components/debug/RaycastDebugger'
 import { PlaceholderBox } from './components/PlaceholderBox'
-import { RimLightMaterial } from './components/scene/RimLightMaterial'
 import { useHydrateLocations } from './hooks/useHydrateLocations'
-import { setPointerCursor } from './utils/pointerCursor'
+import { SceneBackground } from './components/scene/SceneBackground'
 
 /**
  * Leva panel that exposes scene-layer visibility toggles backed by Zustand.
@@ -35,25 +30,29 @@ import { setPointerCursor } from './utils/pointerCursor'
  */
 function LayerToggles() {
   const setLayerVisible = useStore((s) => s.setLayerVisible)
+  const setStressTestMeshCount = useStore((s) => s.setStressTestMeshCount)
   const initialRef = useRef(useStore.getState().layers)
 
   const {
-    Lighting: lighting,
-    Environment: environment,
     Buildings: buildings,
-    Pathways: pathways,
     Terrain: terrain,
     'Stress Test': stressTest,
+    'Stress test mesh count': stressMeshCount,
     'Instanced Rim': instancedRim,
   } = useControls(
     'Layer Visibility',
     {
-      Lighting: { value: initialRef.current.lighting },
-      Environment: { value: initialRef.current.environment },
       Buildings: { value: initialRef.current.buildings },
-      Pathways: { value: initialRef.current.pathways },
       Terrain: { value: initialRef.current.terrain },
       'Stress Test': { value: initialRef.current.stressTest },
+      'Stress test mesh count': {
+        value: useStore.getState().stressTestMeshCount,
+        min: 500,
+        max: 1200,
+        step: 100,
+        /** Show only when Stress Test is on — uses Leva state so it appears immediately (paths are folder-scoped). */
+        render: (get) => !!get('Layer Visibility.Stress Test'),
+      },
       'Instanced Rim': { value: initialRef.current.instancedRim ?? false },
     },
     { collapsed: false },
@@ -61,10 +60,7 @@ function LayerToggles() {
 
   useEffect(() => {
     const entries: [LayerName, boolean][] = [
-      ['lighting', lighting],
-      ['environment', environment],
       ['buildings', buildings],
-      ['pathways', pathways],
       ['terrain', terrain],
       ['stressTest', stressTest],
       ['instancedRim', instancedRim],
@@ -72,7 +68,205 @@ function LayerToggles() {
     for (const [layer, visible] of entries) {
       setLayerVisible(layer, visible)
     }
-  }, [lighting, environment, buildings, pathways, terrain, stressTest, instancedRim, setLayerVisible])
+  }, [buildings, terrain, stressTest, instancedRim, setLayerVisible])
+
+  useEffect(() => {
+    if (stressTest && typeof stressMeshCount === 'number') {
+      setStressTestMeshCount(stressMeshCount)
+    }
+  }, [stressTest, stressMeshCount, setStressTestMeshCount])
+
+  return null
+}
+
+/**
+ * Leva panel for campus greybox “blueprint” tint: base color, opacity, emissive glow.
+ * Values are stored in Zustand so scene code can subscribe without prop drilling from here.
+ */
+function BlueprintBuildingControls() {
+  const setBlueprintBuildingMaterial = useStore((s) => s.setBlueprintBuildingMaterial)
+  const initialRef = useRef(useStore.getState().blueprintBuildingMaterial)
+
+  const d = initialRef.current
+  const {
+    baseColor,
+    opacity,
+    emissiveIntensity,
+    doubleSide,
+    edgeColor,
+    edgeOpacity,
+    showEdges,
+    edgeThreshold,
+    showBuildingGrid,
+    buildingGridColor,
+    buildingGridOpacity,
+    buildingGridCellSize,
+  } = useControls(
+    'Buildings',
+    {
+      baseColor: { value: d.color, label: 'Color' },
+      opacity: { value: d.opacity, min: 0, max: 1, step: 0.02, label: 'Opacity' },
+      emissiveIntensity: {
+        value: d.emissiveIntensity,
+        min: 0,
+        max: 2.5,
+        step: 0.05,
+        label: 'Emissive (glow)',
+      },
+      doubleSide: { value: d.doubleSide, label: 'Double side' },
+      edgeColor: { value: d.edgeColor, label: 'Crease edge color' },
+      edgeOpacity: {
+        value: d.edgeOpacity,
+        min: 0,
+        max: 1,
+        step: 0.02,
+        label: 'Crease edge opacity',
+      },
+      showEdges: { value: d.showEdges, label: 'Show crease edges' },
+      edgeThreshold: {
+        value: d.edgeThreshold,
+        min: 1,
+        max: 89,
+        step: 1,
+        label: 'Crease edge threshold (°)',
+      },
+      showBuildingGrid: {
+        value: d.showBuildingGrid,
+        label: 'Show surface grid (square)',
+      },
+      buildingGridColor: {
+        value: d.buildingGridColor,
+        label: 'Surface grid color',
+      },
+      buildingGridOpacity: {
+        value: d.buildingGridOpacity,
+        min: 0,
+        max: 1,
+        step: 0.02,
+        label: 'Surface grid opacity',
+      },
+      buildingGridCellSize: {
+        value: d.buildingGridCellSize,
+        min: 0.5,
+        max: 40,
+        step: 0.5,
+        label: 'Surface grid cell size',
+      },
+    },
+    { collapsed: true },
+  )
+
+  useEffect(() => {
+    setBlueprintBuildingMaterial({
+      color: baseColor,
+      opacity,
+      emissiveIntensity,
+      doubleSide,
+      edgeColor,
+      edgeOpacity,
+      showEdges,
+      edgeThreshold,
+      showBuildingGrid,
+      buildingGridColor,
+      buildingGridOpacity,
+      buildingGridCellSize,
+    })
+  }, [
+    baseColor,
+    opacity,
+    emissiveIntensity,
+    doubleSide,
+    edgeColor,
+    edgeOpacity,
+    showEdges,
+    edgeThreshold,
+    showBuildingGrid,
+    buildingGridColor,
+    buildingGridOpacity,
+    buildingGridCellSize,
+    setBlueprintBuildingMaterial,
+  ])
+
+  return null
+}
+
+/** Leva → Zustand: ground plane color and PBR sliders. */
+function TerrainGroundControls() {
+  const setTerrainGroundMaterial = useStore((s) => s.setTerrainGroundMaterial)
+  const setTerrainShowGroundPlane = useStore((s) => s.setTerrainShowGroundPlane)
+  const setTerrainShowGrid = useStore((s) => s.setTerrainShowGrid)
+  const setTerrainGridLineColor = useStore((s) => s.setTerrainGridLineColor)
+  const initialRef = useRef(useStore.getState().terrainGroundMaterial)
+  const initialGroundPlaneRef = useRef(useStore.getState().terrainShowGroundPlane)
+  const initialGridRef = useRef(useStore.getState().terrainShowGrid)
+  const initialGridColorRef = useRef(useStore.getState().terrainGridLineColor)
+  const d = initialRef.current
+
+  const { groundColor, roughness, metalness, showGroundPlane, showGrid, gridLineColor } =
+    useControls(
+      'Ground',
+      {
+        showGroundPlane: {
+          value: initialGroundPlaneRef.current,
+          label: 'Show ground plane',
+        },
+        groundColor: { value: d.color, label: 'Ground color' },
+        roughness: { value: d.roughness, min: 0, max: 1, step: 0.02 },
+        metalness: { value: d.metalness, min: 0, max: 1, step: 0.02 },
+        showGrid: {
+          value: initialGridRef.current,
+          label: 'Show grid',
+        },
+        gridLineColor: {
+          value: initialGridColorRef.current,
+          label: 'Grid line color',
+        },
+      },
+      { collapsed: true },
+    )
+
+  useEffect(() => {
+    setTerrainGroundMaterial({
+      color: groundColor,
+      roughness,
+      metalness,
+    })
+  }, [groundColor, roughness, metalness, setTerrainGroundMaterial])
+
+  useEffect(() => {
+    setTerrainShowGroundPlane(showGroundPlane)
+  }, [showGroundPlane, setTerrainShowGroundPlane])
+
+  useEffect(() => {
+    setTerrainShowGrid(showGrid)
+  }, [showGrid, setTerrainShowGrid])
+
+  useEffect(() => {
+    setTerrainGridLineColor(gridLineColor)
+  }, [gridLineColor, setTerrainGridLineColor])
+
+  return null
+}
+
+/** Leva → Zustand: viewport / clear color (`scene.background`). */
+function SceneViewportControls() {
+  const setSceneBackgroundColor = useStore((s) => s.setSceneBackgroundColor)
+  const initialRef = useRef(useStore.getState().sceneBackgroundColor)
+
+  const { backgroundColor } = useControls(
+    'Viewport',
+    {
+      backgroundColor: {
+        value: initialRef.current,
+        label: 'Background color',
+      },
+    },
+    { collapsed: true },
+  )
+
+  useEffect(() => {
+    setSceneBackgroundColor(backgroundColor)
+  }, [backgroundColor, setSceneBackgroundColor])
 
   return null
 }
@@ -115,8 +309,6 @@ function CameraRigWithControls() {
 export default function App() {
   useHydrateLocations()
 
-  const [debugCubeHovered, setDebugCubeHovered] = useState(false)
-
   return (
     <DebugWrapper>
       <div className="canvas-container">
@@ -132,16 +324,17 @@ export default function App() {
           }}
         >
           <CameraControlProvider>
+            <SceneBackground />
             <Perf position="top-left" minimal={false} />
 
             <CameraRigWithControls />
             <LayerToggles />
+            <SceneViewportControls />
+            <BlueprintBuildingControls />
+            <TerrainGroundControls />
 
             {/* Non-suspending layers render immediately */}
-            <LightingGroup />
-            <EnvironmentGroup />
             <TerrainGroup />
-            <PathwaysGroup />
             <StressTestGroup />
             <InstancedRimExample />
 
@@ -155,31 +348,6 @@ export default function App() {
                 <BuildingsGroup />
               </Suspense>
             </AssetErrorBoundary>
-
-            <RaycastDebugger />
-
-            {/* Debug: Simple test cube at origin to verify rendering (rim light + pulse) */}
-            <mesh
-              position={[0, 5, 0]}
-              onPointerOver={(event: ThreeEvent<PointerEvent>) => {
-                event.stopPropagation()
-                setPointerCursor(true)
-                setDebugCubeHovered(true)
-              }}
-              onPointerOut={(event: ThreeEvent<PointerEvent>) => {
-                event.stopPropagation()
-                setPointerCursor(false)
-                setDebugCubeHovered(false)
-              }}
-            >
-              <boxGeometry args={[5, 5, 5]} />
-              <RimLightMaterial
-                color="orange"
-                uColor="#00ffff"
-                uIntensity={debugCubeHovered ? 1 : 0}
-                uPulseSpeed={2}
-              />
-            </mesh>
           </CameraControlProvider>
         </Canvas>
       </div>

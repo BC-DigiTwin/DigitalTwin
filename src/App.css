@@ -1,3 +1,16 @@
+/*
+ * Single Leva panel (auto-mounted by useControls): widen panel + inputs so labels fit.
+ * Do not add <Leva /> in App — that creates a second duplicate panel.
+ */
+:root {
+  --leva-sizes-rootWidth: 440px !important;
+  --leva-sizes-controlWidth: 220px !important;
+}
+
+#leva__root {
+  font-size: 12px;
+}
+
 /* Canvas container - ensures full viewport without scrollbars */
 .canvas-container {
   width: 100%;

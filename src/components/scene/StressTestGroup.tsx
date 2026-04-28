@@ -1,5 +1,4 @@
 import { useRef } from 'react'
-import { useControls } from 'leva'
 import type { Group } from 'three'
 import { useStore } from '../../store/useStore'
 import { useRenderLayer } from '../../hooks/useInteractiveLayer'
@@ -11,27 +10,14 @@ import { RENDER_LAYERS } from '../../constants/renderLayers'
  * `layers.stressTest` flag (off by default).
  *
  * Tagged with `RENDER_LAYERS.DEBUG` (layer 5) — the raycaster ignores it.
- * Mesh count is tuneable via Leva while the layer is visible.
+ * Mesh count is controlled from **Layer Visibility** when the stress layer is on.
  */
 export function StressTestGroup() {
   const visible = useStore((s) => s.layers.stressTest)
+  const count = useStore((s) => s.stressTestMeshCount)
   const groupRef = useRef<Group>(null)
 
   useRenderLayer(groupRef.current, RENDER_LAYERS.DEBUG)
-
-  const { count } = useControls(
-    'Stress Test',
-    {
-      count: {
-        value: 600,
-        min: 500,
-        max: 1200,
-        step: 100,
-        label: 'Mesh count',
-      },
-    },
-    { collapsed: true },
-  )
 
   if (!visible) return null
 
@@ -44,7 +30,11 @@ export function StressTestGroup() {
     return (
       <mesh key={i} position={[x, 0.5, z]}>
         <boxGeometry args={[0.8, 0.8, 0.8]} />
-        <meshStandardMaterial color={`hsl(${(i * 37) % 360}, 60%, 50%)`} />
+        <meshStandardMaterial
+          color={`hsl(${(i * 37) % 360}, 60%, 50%)`}
+          emissive={`hsl(${(i * 37) % 360}, 60%, 50%)`}
+          emissiveIntensity={1}
+        />
       </mesh>
     )
   })

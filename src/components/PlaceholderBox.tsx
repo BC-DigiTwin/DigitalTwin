@@ -33,6 +33,8 @@ export function PlaceholderBox({
         <boxGeometry args={[w, h, d]} />
         <meshStandardMaterial
           color={color}
+          emissive={color}
+          emissiveIntensity={1}
           transparent
           opacity={opacity}
           depthWrite={false}
