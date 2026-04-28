@@ -293,6 +293,7 @@ function SceneNode({
               color={blueprint.edgeColor}
               transparent={blueprint.edgeOpacity < 1}
               opacity={blueprint.edgeOpacity}
+              linewidth={blueprint.edgeLineWidth}
               depthWrite={false}
             />
           ) : null}
