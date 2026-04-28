@@ -125,10 +125,10 @@ function BlueprintBuildingControls() {
       showEdges: { value: d.showEdges, label: 'Show crease edges' },
       edgeThreshold: {
         value: d.edgeThreshold,
-        min: 1,
-        max: 89,
+        min: 15,
+        max: 20,
         step: 1,
-        label: 'Crease edge threshold (°)',
+        label: 'Crease edge threshold angle (°)',
       },
       showBuildingGrid: {
         value: d.showBuildingGrid,

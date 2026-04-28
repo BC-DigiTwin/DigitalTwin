@@ -45,7 +45,9 @@ export const BLUEPRINT_BUILDING_DEFAULTS: BlueprintBuildingMaterialSettings = {
   edgeColor: '#E8FDFF',
   edgeOpacity: 1,
   showEdges: true,
-  edgeThreshold: 15,
+  // Tuned for blueprint readability: keeps major silhouettes/creases while
+  // suppressing noisy internal lines on mostly coplanar faces.
+  edgeThreshold: 18,
   showBuildingGrid: false,
   buildingGridColor: '#5a8ca0',
   buildingGridOpacity: 0.45,
