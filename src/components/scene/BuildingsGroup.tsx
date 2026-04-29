@@ -1,14 +1,14 @@
 import {
-  useState,
   useMemo,
   useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
 } from 'react'
-import type { ThreeEvent } from '@react-three/fiber'
-import { Edges } from '@react-three/drei'
+import { useFrame, type ThreeEvent } from '@react-three/fiber'
+import { Edges, type EdgesRef } from '@react-three/drei'
 import * as THREE from 'three'
+import { damp, dampC } from 'maath/easing'
 import { useStore } from '../../store/useStore'
 import { useAssetLoader } from '../../hooks/useAssetLoader'
 import { useInteractiveLayer } from '../../hooks/useInteractiveLayer'
@@ -16,19 +16,34 @@ import { useClickDragThreshold } from '../../hooks/useClickDragThreshold'
 import { gpsToWorldPosition } from '../../utils/gps'
 import { setPointerCursor } from '../../utils/pointerCursor'
 import { WORLD_ORIGIN } from '../../constants/coordinates'
+import { RENDER_LAYERS } from '../../constants/renderLayers'
 import {
   BLUEPRINT_BUILDING_DEFAULTS,
+  INTERACTION_STATE_COLORS,
   type BlueprintBuildingMaterialSettings,
 } from '../../constants/sceneMaterials'
-import { RimLightMaterial } from './RimLightMaterial'
+import { RimLightMaterial, type RimLightMaterialHandle } from './RimLightMaterial'
+
+/**
+ * Smooth-time (seconds) for `maath/easing` damping of rim color and intensity.
+ * Roughly the time it takes to reach ~90% of the target value.
+ * Lower = snappier hover feel; higher = lazier ease.
+ */
+const INTERACTION_DAMP_SMOOTH_TIME = 0.15
+
+/**
+ * Peak rim intensity for hovered/selected meshes. Higher = brighter halo.
+ * `1` is the shader's natural max; values above add additive overdrive that's
+ * tone-mapped down — useful since the blueprint base color is already cyan
+ * so subtle rims blend into the surface.
+ */
+const INTERACTION_RIM_INTENSITY = 5
 
 /** Public path to the campus greybox GLB (World Origin = scene anchor). */
 export const CAMPUS_GLB_PATH = '/models/campus_greybox.glb'
 
 // Preload so Suspense can resolve when BuildingsGroup mounts
 useAssetLoader.preload(CAMPUS_GLB_PATH)
-
-const RIM_GLOW_COLOR = '#00ffff'
 
 /**
  * Shared MeshBasicMaterial for stripped GLB meshes — synced from store so it matches
@@ -42,8 +57,6 @@ const STRIPPED_MATERIAL = new THREE.MeshBasicMaterial({
 
 interface SceneNodeProps {
   node: THREE.Object3D
-  hoveredBuildingId: string | null
-  setHoveredBuildingId: (id: string | null) => void
   /** UUID of the parent group that represents this building (walls + roof share this). */
   buildingId: string | null
   blueprint: BlueprintBuildingMaterialSettings
@@ -235,79 +248,195 @@ function BuildingSquareGridOverlay({
 }
 
 /**
+ * Mesh-level interactable renderer.
+ *
+ * Performance contract:
+ * - Hover/selection state is read via `useStore.subscribe` (imperative), NOT
+ *   via the `useStore` hook, so per-mesh hover/click events do NOT trigger a
+ *   React re-render of this component or any of its descendants.
+ * - Rim color/intensity transitions are applied directly to the
+ *   `RimLightMaterial` uniforms each frame (`useFrame` + `materialApi.lerp*`),
+ *   so the campus tree is never re-rendered when only the highlight changes.
+ *
+ * The component still renders once per blueprint change (deliberate config tweak).
+ */
+function BuildingMeshNode({
+  mesh,
+  buildingId,
+  blueprint,
+}: {
+  mesh: THREE.Mesh
+  buildingId: string
+  blueprint: BlueprintBuildingMaterialSettings
+}) {
+  const meshRef = useRef<THREE.Mesh>(null!)
+  const materialApiRef = useRef<RimLightMaterialHandle | null>(null)
+  const edgesRef = useRef<EdgesRef | null>(null)
+  const targetColorRef = useRef(new THREE.Color(INTERACTION_STATE_COLORS.BASE.hex))
+  const targetIntensityRef = useRef(0)
+  const targetEdgeColorRef = useRef(new THREE.Color(blueprint.edgeColor))
+  const targetBodyColorRef = useRef(new THREE.Color(blueprint.color))
+  const targetEmissiveIntensityRef = useRef(blueprint.emissiveIntensity)
+  const targetOpacityRef = useRef(blueprint.opacity)
+  const opacityWrapperRef = useRef({ value: blueprint.opacity })
+  const emissiveIntensityWrapperRef = useRef({ value: blueprint.emissiveIntensity })
+
+  useLayoutEffect(() => {
+    meshRef.current?.layers.enable(RENDER_LAYERS.INTERACTIVE)
+  }, [])
+
+  const computeTargets = useCallback(
+    (hoveredId: string | null, selectedId: string | null) => {
+      const isSelected = selectedId === buildingId
+      const isHovered = hoveredId === buildingId
+      const stateColor = isSelected
+        ? INTERACTION_STATE_COLORS.SELECTED
+        : isHovered
+          ? INTERACTION_STATE_COLORS.HOVER
+          : INTERACTION_STATE_COLORS.BASE
+
+      targetColorRef.current.set(stateColor.hex)
+      targetIntensityRef.current = isHovered || isSelected ? INTERACTION_RIM_INTENSITY : 0
+      targetEdgeColorRef.current.set(stateColor.edgeHex ?? blueprint.edgeColor)
+      targetBodyColorRef.current.set(stateColor.bodyHex ?? blueprint.color)
+      targetEmissiveIntensityRef.current =
+        stateColor.bodyEmissiveIntensity ?? blueprint.emissiveIntensity
+      targetOpacityRef.current = stateColor.bodyOpacity ?? blueprint.opacity
+    },
+    [buildingId, blueprint.color, blueprint.edgeColor, blueprint.emissiveIntensity, blueprint.opacity],
+  )
+
+  useEffect(() => {
+    const { hoveredId, selectedId } = useStore.getState()
+    computeTargets(hoveredId, selectedId)
+
+    return useStore.subscribe((state, prev) => {
+      if (state.hoveredId === prev.hoveredId && state.selectedId === prev.selectedId) {
+        return
+      }
+      computeTargets(state.hoveredId, state.selectedId)
+    })
+  }, [computeTargets])
+
+  useFrame((_, delta) => {
+    const api = materialApiRef.current
+    if (api) {
+      dampC(api.colorUniform.value, targetColorRef.current, INTERACTION_DAMP_SMOOTH_TIME, delta)
+      damp(api.intensityUniform, 'value', targetIntensityRef.current, INTERACTION_DAMP_SMOOTH_TIME, delta)
+
+      const material = api.getMaterial()
+      if (material) {
+        dampC(material.color, targetBodyColorRef.current, INTERACTION_DAMP_SMOOTH_TIME, delta)
+        dampC(material.emissive, targetBodyColorRef.current, INTERACTION_DAMP_SMOOTH_TIME, delta)
+
+        damp(
+          emissiveIntensityWrapperRef.current,
+          'value',
+          targetEmissiveIntensityRef.current,
+          INTERACTION_DAMP_SMOOTH_TIME,
+          delta,
+        )
+        material.emissiveIntensity = emissiveIntensityWrapperRef.current.value
+
+        damp(
+          opacityWrapperRef.current,
+          'value',
+          targetOpacityRef.current,
+          INTERACTION_DAMP_SMOOTH_TIME,
+          delta,
+        )
+        material.opacity = opacityWrapperRef.current.value
+      }
+    }
+
+    const edges = edgesRef.current
+    if (edges) {
+      dampC(edges.material.color, targetEdgeColorRef.current, INTERACTION_DAMP_SMOOTH_TIME, delta)
+    }
+  })
+
+  const handlePointerOver = useCallback(
+    (e: ThreeEvent<PointerEvent>) => {
+      e.stopPropagation()
+      setPointerCursor(true)
+      useStore.getState().setHoveredId(buildingId)
+    },
+    [buildingId],
+  )
+
+  const handlePointerOut = useCallback((e: ThreeEvent<PointerEvent>) => {
+    e.stopPropagation()
+    setPointerCursor(false)
+    useStore.getState().setHoveredId(null)
+  }, [])
+
+  return (
+    <group
+      key={mesh.uuid}
+      position={mesh.position.clone()}
+      quaternion={mesh.quaternion.clone()}
+      scale={mesh.scale.clone()}
+    >
+      <mesh
+        ref={meshRef}
+        geometry={mesh.geometry}
+        castShadow
+        receiveShadow
+        onPointerOver={handlePointerOver}
+        onPointerOut={handlePointerOut}
+      >
+        <RimLightMaterial
+          ref={materialApiRef}
+          color={blueprint.color}
+          transparent={blueprint.opacity < 1}
+          opacity={blueprint.opacity}
+          emissive={blueprint.color}
+          emissiveIntensity={blueprint.emissiveIntensity}
+          metalness={0}
+          roughness={0.92}
+          depthWrite={false}
+          side={blueprint.doubleSide ? THREE.DoubleSide : THREE.FrontSide}
+          uColor={INTERACTION_STATE_COLORS.BASE.hex}
+          uIntensity={0}
+        />
+        {blueprint.showEdges ? (
+          <Edges
+            ref={edgesRef}
+            threshold={blueprint.edgeThreshold}
+            color={blueprint.edgeColor}
+            transparent={blueprint.edgeOpacity < 1}
+            opacity={blueprint.edgeOpacity}
+            linewidth={blueprint.edgeLineWidth}
+            depthWrite={false}
+          />
+        ) : null}
+      </mesh>
+      <BuildingSquareGridOverlay
+        geometry={mesh.geometry}
+        color={blueprint.buildingGridColor}
+        opacity={blueprint.buildingGridOpacity}
+        cellSize={blueprint.buildingGridCellSize}
+        doubleSide={blueprint.doubleSide}
+        visible={blueprint.showBuildingGrid}
+      />
+    </group>
+  )
+}
+
+/**
  * Recursively renders GLB scene nodes. Groups pass their uuid as buildingId so
  * all meshes under the same group (e.g. walls + roof) share one hover: when any
  * part is hovered, the whole building glows.
  */
 function SceneNode({
   node,
-  hoveredBuildingId,
-  setHoveredBuildingId,
   buildingId: parentBuildingId,
   blueprint,
 }: SceneNodeProps) {
   if (node.type === 'Mesh') {
     const mesh = node as THREE.Mesh
-    const id = mesh.uuid
-    const buildingId = parentBuildingId ?? id
-    const isHovered = hoveredBuildingId === buildingId
-
-    return (
-      <group
-        key={id}
-        position={mesh.position.clone()}
-        quaternion={mesh.quaternion.clone()}
-        scale={mesh.scale.clone()}
-      >
-        <mesh
-          geometry={mesh.geometry}
-          castShadow
-          receiveShadow
-          onPointerOver={(e: ThreeEvent<PointerEvent>) => {
-            e.stopPropagation()
-            setPointerCursor(true)
-            setHoveredBuildingId(buildingId)
-          }}
-          onPointerOut={(e: ThreeEvent<PointerEvent>) => {
-            e.stopPropagation()
-            setPointerCursor(false)
-            setHoveredBuildingId(null)
-          }}
-        >
-          <RimLightMaterial
-            color={blueprint.color}
-            transparent={blueprint.opacity < 1}
-            opacity={blueprint.opacity}
-            emissive={blueprint.color}
-            emissiveIntensity={blueprint.emissiveIntensity}
-            metalness={0}
-            roughness={0.92}
-            depthWrite={false}
-            side={blueprint.doubleSide ? THREE.DoubleSide : THREE.FrontSide}
-            uColor={RIM_GLOW_COLOR}
-            uIntensity={isHovered ? 1 : 0}
-          />
-          {blueprint.showEdges ? (
-            <Edges
-              threshold={blueprint.edgeThreshold}
-              color={blueprint.edgeColor}
-              transparent={blueprint.edgeOpacity < 1}
-              opacity={blueprint.edgeOpacity}
-              linewidth={blueprint.edgeLineWidth}
-              depthWrite={false}
-            />
-          ) : null}
-        </mesh>
-        <BuildingSquareGridOverlay
-          geometry={mesh.geometry}
-          color={blueprint.buildingGridColor}
-          opacity={blueprint.buildingGridOpacity}
-          cellSize={blueprint.buildingGridCellSize}
-          doubleSide={blueprint.doubleSide}
-          visible={blueprint.showBuildingGrid}
-        />
-      </group>
-    )
+    const buildingId = parentBuildingId ?? mesh.uuid
+    return <BuildingMeshNode mesh={mesh} buildingId={buildingId} blueprint={blueprint} />
   }
 
   const obj = node as THREE.Object3D
@@ -323,8 +452,6 @@ function SceneNode({
         <SceneNode
           key={child.uuid}
           node={child}
-          hoveredBuildingId={hoveredBuildingId}
-          setHoveredBuildingId={setHoveredBuildingId}
           buildingId={thisGroupId}
           blueprint={blueprint}
         />
@@ -349,9 +476,9 @@ function SceneNode({
  * Click events use a drag-threshold check so camera pans are ignored.
  */
 export function BuildingsGroup() {
-  const [hoveredBuildingId, setHoveredBuildingId] = useState<string | null>(null)
   const visible = useStore((s) => s.layers.buildings)
   const blueprint = useStore((s) => s.blueprintBuildingMaterial)
+  const setSelectedBuildingId = useStore((s) => s.setSelectedId)
   const gltf = useAssetLoader(CAMPUS_GLB_PATH)
 
   useInteractiveLayer(gltf.scene)
@@ -381,13 +508,15 @@ export function BuildingsGroup() {
   const handleClick = useCallback((e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation()
     const meshEntry = meshToBuildingMap.get(e.object.uuid)
+    const nextSelectedBuildingId = meshEntry?.buildingId ?? e.object.parent?.uuid ?? e.object.uuid
+    setSelectedBuildingId(nextSelectedBuildingId)
     const name =
       meshEntry?.buildingName ??
       e.object.name ??
       e.object.parent?.name ??
       '(unnamed)'
     console.log('[BuildingsGroup] clicked:', name, e.point)
-  }, [meshToBuildingMap])
+  }, [meshToBuildingMap, setSelectedBuildingId])
 
   const clickHandlers = useClickDragThreshold(handleClick)
 
@@ -397,8 +526,6 @@ export function BuildingsGroup() {
         <SceneNode
           key={child.uuid}
           node={child}
-          hoveredBuildingId={hoveredBuildingId}
-          setHoveredBuildingId={setHoveredBuildingId}
           buildingId={null}
           blueprint={blueprint}
         />
