@@ -22,6 +22,8 @@ export interface BlueprintBuildingMaterialSettings {
   /** Crease / silhouette lines (`@react-three/drei` `<Edges>` / Line2) — separate tint from faces. */
   edgeColor: string
   edgeOpacity: number
+  /** Screen-space edge thickness in pixels (`<Edges linewidth={...}>`). */
+  edgeLineWidth: number
   showEdges: boolean
   /** Degrees between face normals below which two faces are smoothed together (drei `<Edges>` / `EdgesGeometry`). Higher = fewer lines. */
   edgeThreshold: number
@@ -42,10 +44,14 @@ export const BLUEPRINT_BUILDING_DEFAULTS: BlueprintBuildingMaterialSettings = {
   opacity: 0.4,
   emissiveIntensity: 0.8,
   doubleSide: true,
-  edgeColor: '#E8FDFF',
+  // Bright white for maximum contrast against cyan translucent building faces.
+  edgeColor: '#FFFFFF',
   edgeOpacity: 1,
+  edgeLineWidth: 2.25,
   showEdges: true,
-  edgeThreshold: 15,
+  // Tuned for blueprint readability: keeps major silhouettes/creases while
+  // suppressing noisy internal lines on mostly coplanar faces.
+  edgeThreshold: 18,
   showBuildingGrid: false,
   buildingGridColor: '#5a8ca0',
   buildingGridOpacity: 0.45,

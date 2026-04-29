@@ -406,6 +406,7 @@ function BuildingMeshNode({
             color={blueprint.edgeColor}
             transparent={blueprint.edgeOpacity < 1}
             opacity={blueprint.edgeOpacity}
+            linewidth={blueprint.edgeLineWidth}
             depthWrite={false}
           />
         ) : null}
@@ -467,6 +468,7 @@ function SceneNode({
  * with RimLightMaterial and pointer events so hovering a building creates
  * the rim glow (issues 96–97: rim light shader, uColor/uIntensity uniforms).
  * Crease lines use @react-three/drei `Edges` as a child of each building mesh (#162).
+ * Threshold is tuned for cleaner blueprint silhouettes on coplanar geometry (#163).
  * Visibility is driven by the global Zustand `layers.buildings` flag.
  *
  * All meshes are added to the INTERACTIVE render layer so the
