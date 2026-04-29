@@ -93,3 +93,64 @@ export const RIM_LIGHT_DEFAULTS = {
   uIntensity: 1,
   uPulseSpeed: 2,
 } as const
+
+/** Canonical interaction states used for mesh highlighting. */
+export const INTERACTION_STATES = ['BASE', 'HOVER', 'SELECTED'] as const
+
+export type InteractionState = (typeof INTERACTION_STATES)[number]
+
+export interface InteractionStateColor {
+  /** Rim glow color (Fresnel edge highlight added by RimLightMaterial). */
+  hex: `#${string}`
+  rgb: `rgb(${number}, ${number}, ${number})`
+  /**
+   * Optional override for the building's mesh body color (the diffuse
+   * `material.color`). When `undefined`, body falls back to the user-tunable
+   * `blueprint.color`. Set on HOVER/SELECTED to tint the entire mesh.
+   */
+  bodyHex?: `#${string}`
+  /**
+   * Optional override for the building's `<Edges>` linework color when this
+   * state is active. When `undefined`, edges fall back to the user-tunable
+   * `blueprint.edgeColor`. Used by SELECTED to make the active building's
+   * outlines pop visibly above the rest of the campus.
+   */
+  edgeHex?: `#${string}`
+  /**
+   * Optional `material.emissiveIntensity` for this state. Higher = more glow.
+   * Falls back to `blueprint.emissiveIntensity` when undefined.
+   */
+  bodyEmissiveIntensity?: number
+  /**
+   * Optional `material.opacity` for this state (0..1). Higher = more solid.
+   * Falls back to `blueprint.opacity` when undefined. SELECTED uses 1 to
+   * make the active building punch through the campus.
+   */
+  bodyOpacity?: number
+}
+
+/**
+ * Single source of truth for interaction-state colors.
+ * Keep HEX and RGB variants aligned so shader/DOM usage stays consistent.
+ */
+export const INTERACTION_STATE_COLORS = {
+  BASE: {
+    hex: '#40D9FF',
+    rgb: 'rgb(64, 217, 255)',
+  },
+  HOVER: {
+    hex: '#67F0D9',
+    rgb: 'rgb(103, 240, 217)',
+    bodyHex: '#67F0D9',
+    bodyEmissiveIntensity: 1.8,
+    bodyOpacity: 0.75,
+  },
+  SELECTED: {
+    hex: '#FFC857',
+    rgb: 'rgb(255, 200, 87)',
+    bodyHex: '#FFC857',
+    edgeHex: '#FFFFFF',
+    bodyEmissiveIntensity: 3,
+    bodyOpacity: 1,
+  },
+} as const satisfies Record<InteractionState, InteractionStateColor>

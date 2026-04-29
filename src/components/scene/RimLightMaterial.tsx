@@ -7,7 +7,7 @@
  * Exposes uniforms: uColor, uIntensity, uTime, uPulseSpeed (and rimPower).
  * Injects into the built-in fragment shader via onBeforeCompile; keeps PBR lighting.
  */
-import React, { useLayoutEffect, useRef } from 'react'
+import React, { forwardRef, useImperativeHandle, useLayoutEffect, useRef } from 'react'
 import * as THREE from 'three'
 import { useFrame, useThree } from '@react-three/fiber'
 import { RIM_LIGHT_DEFAULTS } from '../../constants/sceneMaterials'
@@ -84,6 +84,34 @@ export interface RimLightMaterialProps {
 }
 
 /**
+ * Imperative API for `RimLightMaterial`.
+ *
+ * Use this handle to mutate the underlying shader uniforms directly inside
+ * `useFrame` / `useEffect` so per-frame highlight transitions (hover, selection)
+ * never trigger React re-renders of the surrounding scene graph.
+ *
+ * The exposed `colorUniform` / `intensityUniform` are the live `{ value }`
+ * objects bound to the shader. Pass them straight into `maath/easing` helpers
+ * (`dampC`, `damp`) for framerate-independent transitions.
+ */
+export interface RimLightMaterialHandle {
+  /** Snap the rim color to a target instantly. */
+  setUColor(color: string | THREE.Color): void
+  /** Snap the rim intensity to a target instantly. */
+  setUIntensity(intensity: number): void
+  /** Live color uniform (`uniform.value` is the `THREE.Color` the GPU reads). */
+  readonly colorUniform: { value: THREE.Color }
+  /** Live intensity uniform (`uniform.value` is the float the GPU reads). */
+  readonly intensityUniform: { value: number }
+  /**
+   * Underlying `MeshStandardMaterial`. Use to mutate `.color`, `.emissive`,
+   * `.opacity`, etc. directly inside `useFrame` for zero-rerender transitions.
+   * May be `null` before the material has mounted.
+   */
+  getMaterial(): THREE.MeshStandardMaterial | null
+}
+
+/**
  * MeshStandardMaterial with rim light: glowing edge from dot(viewDir, normal).
  * Pulse is controlled by uTime (from R3F clock) and uPulseSpeed.
  * Use in place of <meshStandardMaterial> for any mesh.
@@ -91,14 +119,18 @@ export interface RimLightMaterialProps {
  * Instancing: When used with InstancedMesh and instanceColor set, the rim term is multiplied by the instance color (USE_INSTANCING_COLOR / vColor).
  * When useInstanceRimIntensity is true, rim intensity is read from the geometry's instanceRimIntensity attribute (float) instead of uIntensity.
  */
-export function RimLightMaterial({
-  uColor: uColorProp = RIM_LIGHT_DEFAULTS.uColor,
-  rimPower = RIM_LIGHT_DEFAULTS.rimPower,
-  uIntensity = RIM_LIGHT_DEFAULTS.uIntensity,
-  uPulseSpeed = RIM_LIGHT_DEFAULTS.uPulseSpeed,
-  useInstanceRimIntensity = false,
-  ...standardProps
-}: RimLightMaterialProps) {
+export const RimLightMaterial = forwardRef<RimLightMaterialHandle, RimLightMaterialProps>(
+  function RimLightMaterial(
+    {
+      uColor: uColorProp = RIM_LIGHT_DEFAULTS.uColor,
+      rimPower = RIM_LIGHT_DEFAULTS.rimPower,
+      uIntensity = RIM_LIGHT_DEFAULTS.uIntensity,
+      uPulseSpeed = RIM_LIGHT_DEFAULTS.uPulseSpeed,
+      useInstanceRimIntensity = false,
+      ...standardProps
+    },
+    apiRef,
+  ) {
   const materialRef = useRef<THREE.MeshStandardMaterial>(null!)
   const clock = useThree((s) => s.clock)
   const uniformsRef = useRef({
@@ -108,6 +140,22 @@ export function RimLightMaterial({
     uTime: { value: 0 },
     uPulseSpeed: { value: uPulseSpeed },
   })
+
+  useImperativeHandle(
+    apiRef,
+    (): RimLightMaterialHandle => ({
+      setUColor: (c) => {
+        uniformsRef.current.uColor.value.copy(toColor(c))
+      },
+      setUIntensity: (i) => {
+        uniformsRef.current.uIntensity.value = i
+      },
+      colorUniform: uniformsRef.current.uColor,
+      intensityUniform: uniformsRef.current.uIntensity,
+      getMaterial: () => materialRef.current,
+    }),
+    [],
+  )
 
   useLayoutEffect(() => {
     uniformsRef.current.uColor.value.copy(toColor(uColorProp))
@@ -159,4 +207,5 @@ varying float vRimIntensity;
   }, [useInstanceRimIntensity])
 
   return <meshStandardMaterial ref={materialRef} {...standardProps} />
-}
+  },
+)
