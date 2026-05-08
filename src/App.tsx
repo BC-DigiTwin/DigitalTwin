@@ -21,6 +21,7 @@ import { AssetErrorBoundary } from './components/AssetErrorBoundary'
 import { PlaceholderBox } from './components/PlaceholderBox'
 import { useHydrateLocations } from './hooks/useHydrateLocations'
 import { SceneBackground } from './components/scene/SceneBackground'
+import { InfoPanel } from './components/InfoPanel'
 
 /**
  * Leva panel that exposes scene-layer visibility toggles backed by Zustand.
@@ -360,6 +361,7 @@ export default function App() {
             </AssetErrorBoundary>
           </CameraControlProvider>
         </Canvas>
+        <InfoPanel />
       </div>
     </DebugWrapper>
   )
