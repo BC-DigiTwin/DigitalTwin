@@ -1,8 +1,10 @@
-import { useRef, useLayoutEffect, useEffect } from 'react'
+import { useRef, useLayoutEffect, useEffect, useMemo } from 'react'
 import { useThree, useFrame } from '@react-three/fiber'
 import { OrbitControls as ThreeOrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import * as THREE from 'three'
 import gsap from 'gsap'
+
+import { useStore } from '../store/useStore'
 
 /* ── Static constants (never change at runtime) ───────────────────── */
 
@@ -76,6 +78,134 @@ function applyControlMapping(
   controls.update()
 }
 
+const _buildingFocusBox = new THREE.Box3()
+const _buildingFocusOtherBox = new THREE.Box3()
+const _focusNewTarget = new THREE.Vector3()
+const _focusNewPos = new THREE.Vector3()
+const _focusDirToCam = new THREE.Vector3()
+const _boundingSphere = new THREE.Sphere()
+const _buildCenter = new THREE.Vector3()
+const _vRt = new THREE.Vector3()
+const _vLeg = new THREE.Vector3()
+const _midArcPos = new THREE.Vector3()
+const _worldUp = new THREE.Vector3(0, 1, 0)
+const _axisX = new THREE.Vector3(1, 0, 0)
+
+/**
+ * Angle above the XZ plane for the segment **target → camera** (so the camera
+ * looks down at the target by the same angle below the horizontal).
+ * 30° ≈ a typical isometric-style orbit.
+ */
+const BUILDING_FOCUS_ELEVATION_DEG = 30
+
+/** Extra margin so the full building stays inside the frustum. */
+const BUILDING_FOCUS_RADIUS_PAD = 1.18
+
+/**
+ * Orbit camera always sits at least this far from the building center (plus fit
+ * distance if larger) so the fly-in has a longer, more readable path.
+ */
+const BUILDING_FOCUS_FIXED_ORBIT_DISTANCE = 64
+
+/** Extra yaw at the **end** pose (degrees) so the view swings a bit through the move. */
+const BUILDING_FOCUS_END_YAW_DEG = 11
+
+/** Slight sideways lift in the middle of the path (world units) for a subtle arc. */
+const BUILDING_FOCUS_ARC_OUT_MIN = 5
+const BUILDING_FOCUS_ARC_OUT_FRAC = 0.065
+
+/**
+ * Shift the OrbitControls **look target** along camera-right (world space) so the
+ * building sits a bit **left** of frame — room for the HTML side panel on the right.
+ */
+const BUILDING_FOCUS_PANEL_SHIFT_MIN = 3.5
+const BUILDING_FOCUS_PANEL_SHIFT_FRAC = 0.16
+
+/** Building-focus moves last a bit longer than generic camera transitions. */
+const BUILDING_FOCUS_DURATION_MULT = 1.18
+
+/** Map: multiply fitted zoom by this (<1 = zoom out more) for breathing room. */
+const BUILDING_FOCUS_MAP_ZOOM_FRAC = 0.82
+
+/**
+ * Fills `outBox` with the union of world bounds for meshes tagged
+ * `userData.buildingId === id`. Returns false when nothing matches.
+ */
+function computeBuildingWorldBounds(
+  root: THREE.Object3D,
+  buildingId: string,
+  outBox: THREE.Box3,
+): boolean {
+  let found = false
+  root.updateMatrixWorld(true)
+  root.traverse((obj) => {
+    if (obj.type !== 'Mesh') return
+    const mesh = obj as THREE.Mesh
+    if (mesh.userData.buildingId !== buildingId) return
+    if (!found) {
+      outBox.setFromObject(mesh)
+      found = true
+    } else {
+      _buildingFocusOtherBox.setFromObject(mesh)
+      outBox.union(_buildingFocusOtherBox)
+    }
+  })
+  return found
+}
+
+/**
+ * Orbit camera **position** at `outPosition` and OrbitControls **look target** at
+ * `outLookTarget` (building center shifted slightly right in screen space so the
+ * mesh reads left-of-center for the side panel). Uses fixed minimum distance for a
+ * longer move, clamped by fit distance so large buildings still fit.
+ */
+function computeFittedOrbitPosition(
+  camera: THREE.PerspectiveCamera,
+  bounds: THREE.Box3,
+  azimuthRad: number,
+  outLookTarget: THREE.Vector3,
+  outPosition: THREE.Vector3,
+): void {
+  bounds.getCenter(_buildCenter)
+  bounds.getBoundingSphere(_boundingSphere)
+  const r = Math.max(_boundingSphere.radius, 0.5) * BUILDING_FOCUS_RADIUS_PAD
+
+  const elev = THREE.MathUtils.degToRad(BUILDING_FOCUS_ELEVATION_DEG)
+  const cosEl = Math.cos(elev)
+  const sinEl = Math.sin(elev)
+  const yaw = azimuthRad + THREE.MathUtils.degToRad(BUILDING_FOCUS_END_YAW_DEG)
+  const sinAz = Math.sin(yaw)
+  const cosAz = Math.cos(yaw)
+
+  _focusDirToCam.set(sinAz * cosEl, sinEl, cosAz * cosEl).normalize()
+
+  const vHalf = THREE.MathUtils.degToRad(camera.fov) * 0.5
+  const aspect = Math.max(camera.aspect, 0.01)
+  const hHalf = Math.atan(Math.tan(vHalf) * aspect)
+  const fitDist = Math.max(r / Math.tan(vHalf), r / Math.tan(hHalf), 8)
+  const dist = Math.max(BUILDING_FOCUS_FIXED_ORBIT_DISTANCE, fitDist)
+
+  outPosition.copy(_buildCenter).add(_focusDirToCam.multiplyScalar(dist))
+
+  camera.position.copy(outPosition)
+  camera.up.copy(_worldUp)
+  camera.lookAt(_buildCenter)
+  _vRt.set(1, 0, 0).applyQuaternion(camera.quaternion).normalize()
+  const panelShift = Math.max(BUILDING_FOCUS_PANEL_SHIFT_MIN, r * BUILDING_FOCUS_PANEL_SHIFT_FRAC)
+  outLookTarget.copy(_buildCenter).addScaledVector(_vRt, panelShift)
+}
+
+function killBuildingFocusTweens(
+  controls: ThreeOrbitControls,
+  perspCam: THREE.PerspectiveCamera,
+  orthoCam: THREE.OrthographicCamera,
+): void {
+  gsap.killTweensOf(controls.target)
+  gsap.killTweensOf(perspCam.position)
+  gsap.killTweensOf(orthoCam.position)
+  gsap.killTweensOf(orthoCam)
+}
+
 /* ── Component ─────────────────────────────────────────────────────── */
 
 interface CameraRigProps {
@@ -97,6 +227,8 @@ export function CameraRig({
   const gl = useThree((s) => s.gl)
   const set = useThree((s) => s.set)
   const size = useThree((s) => s.size)
+  const scene = useThree((s) => s.scene)
+  const selectedId = useStore((s) => s.selectedId)
 
   const { mapHeight, mapViewSize, orbitFov, damping } = settings
 
@@ -120,6 +252,8 @@ export function CameraRig({
   const settingsRef = useRef(settings)
   settingsRef.current = settings
 
+  const orthoCameraPosition = useMemo((): [number, number, number] => [0, mapHeight, 0], [mapHeight])
+
   /* ── Mount: set initial camera & create OrbitControls ───────── */
   useLayoutEffect(() => {
     const perspCam = perspCamRef.current
@@ -128,6 +262,11 @@ export function CameraRig({
 
     perspCam.aspect = size.width / size.height
     perspCam.updateProjectionMatrix()
+    perspCam.position.set(
+      ORBIT_CAMERA_POSITION[0],
+      ORBIT_CAMERA_POSITION[1],
+      ORBIT_CAMERA_POSITION[2],
+    )
 
     const activeCam = mode === 'orbit' ? perspCam : orthoCam
     set({ camera: activeCam })
@@ -146,6 +285,10 @@ export function CameraRig({
     return () => {
       gsapCtxRef.current?.revert()
       gsapCtxRef.current = null
+      const c = controlsRef.current
+      const p = perspCamRef.current
+      const o = orthoCamRef.current
+      if (c && p && o) killBuildingFocusTweens(c, p, o)
       controls.dispose()
       controlsRef.current = null
     }
@@ -294,19 +437,177 @@ export function CameraRig({
     }
   }, [mode, set])
 
+  /* ── Pan / fly toward selected building (orbit + map) ─────────── */
+  useEffect(() => {
+    const controls = controlsRef.current
+    const perspCam = perspCamRef.current
+    const orthoCam = orthoCamRef.current
+
+    if (!selectedId) {
+      if (controls && perspCam && orthoCam) {
+        killBuildingFocusTweens(controls, perspCam, orthoCam)
+      }
+      return
+    }
+
+    if (!controls || !perspCam || !orthoCam) return
+
+    const buildingId = selectedId
+    let raf = 0
+    let cancelled = false
+
+    const runFocus = (attempt: number) => {
+      if (cancelled) return
+
+      if (!computeBuildingWorldBounds(scene, buildingId, _buildingFocusBox)) {
+        if (attempt < 12) {
+          raf = requestAnimationFrame(() => runFocus(attempt + 1))
+        }
+        return
+      }
+
+      killBuildingFocusTweens(controls, perspCam, orthoCam)
+
+      const { transitionSpeed: duration, mapHeight: height, mapViewSize } =
+        settingsRef.current
+      controls.enabled = false
+
+      const orthoActive = controls.object === orthoCam
+
+      if (!orthoActive) {
+        const cam = perspCam
+        const t = controls.target
+        const dx = cam.position.x - t.x
+        const dz = cam.position.z - t.z
+        const azimuth =
+          dx * dx + dz * dz < 1e-4 ? azimuthRef.current : Math.atan2(dx, dz)
+
+        const sx = cam.position.x
+        const sy = cam.position.y
+        const sz = cam.position.z
+
+        computeFittedOrbitPosition(cam, _buildingFocusBox, azimuth, _focusNewTarget, _focusNewPos)
+
+        cam.position.set(sx, sy, sz)
+
+        _vLeg.set(_focusNewPos.x - sx, _focusNewPos.y - sy, _focusNewPos.z - sz)
+        _vRt.crossVectors(_vLeg, _worldUp)
+        if (_vRt.lengthSq() < 1e-6) {
+          _vRt.crossVectors(_vLeg, _axisX)
+        }
+        _vRt.normalize()
+        const arcMag = Math.min(
+          18,
+          Math.max(BUILDING_FOCUS_ARC_OUT_MIN, _vLeg.length() * BUILDING_FOCUS_ARC_OUT_FRAC),
+        )
+        _midArcPos.set(
+          sx + (_focusNewPos.x - sx) * 0.5 + _vRt.x * arcMag,
+          sy + (_focusNewPos.y - sy) * 0.5 + _vRt.y * arcMag,
+          sz + (_focusNewPos.z - sz) * 0.5 + _vRt.z * arcMag,
+        )
+
+        const d = duration * BUILDING_FOCUS_DURATION_MULT
+        const tMid = d * 0.46
+        const tEnd = d - tMid
+
+        gsap
+          .timeline({
+            onUpdate() {
+              cam.lookAt(controls.target)
+              controls.update()
+            },
+            onComplete() {
+              const tt = controls.target
+              azimuthRef.current = Math.atan2(cam.position.x - tt.x, cam.position.z - tt.z)
+              controls.enabled = true
+            },
+          })
+          .to(
+            controls.target,
+            {
+              x: _focusNewTarget.x,
+              y: _focusNewTarget.y,
+              z: _focusNewTarget.z,
+              duration: d,
+              ease: 'power2.inOut',
+            },
+            0,
+          )
+          .to(
+            cam.position,
+            { x: _midArcPos.x, y: _midArcPos.y, z: _midArcPos.z, duration: tMid, ease: 'sine.in' },
+            0,
+          )
+          .to(
+            cam.position,
+            {
+              x: _focusNewPos.x,
+              y: _focusNewPos.y,
+              z: _focusNewPos.z,
+              duration: tEnd,
+              ease: 'sine.out',
+            },
+            tMid,
+          )
+      } else {
+        const cam = orthoCam
+        _buildingFocusBox.getCenter(_focusNewTarget)
+
+        const dx = _buildingFocusBox.max.x - _buildingFocusBox.min.x
+        const dz = _buildingFocusBox.max.z - _buildingFocusBox.min.z
+        const footprint = Math.max(dx, dz, 0.01)
+        const margin = 1.22
+        const fitZoom = (2 * mapViewSize) / (footprint * margin)
+        const targetZoom = THREE.MathUtils.clamp(fitZoom * BUILDING_FOCUS_MAP_ZOOM_FRAC, 0.08, 14)
+
+        cam.updateMatrixWorld(true)
+        _vRt.set(1, 0, 0).applyQuaternion(cam.quaternion).normalize()
+        const panelShift = Math.max(BUILDING_FOCUS_PANEL_SHIFT_MIN, footprint * 0.14)
+        const tx = _focusNewTarget.x + _vRt.x * panelShift
+        const tz = _focusNewTarget.z + _vRt.z * panelShift
+
+        const dMap = duration * BUILDING_FOCUS_DURATION_MULT
+
+        gsap
+          .timeline({
+            onUpdate() {
+              cam.lookAt(controls.target.x, 0, controls.target.z)
+              cam.updateProjectionMatrix()
+              controls.update()
+            },
+            onComplete() {
+              controls.enabled = true
+            },
+          })
+          .to(controls.target, { x: tx, y: 0, z: tz, duration: dMap, ease: 'power2.inOut' }, 0)
+          .to(cam.position, { x: tx, y: height, z: tz, duration: dMap, ease: 'power2.inOut' }, 0)
+          .to(cam, { zoom: targetZoom, duration: dMap, ease: 'power2.inOut' }, 0)
+      }
+    }
+
+    raf = requestAnimationFrame(() => runFocus(0))
+
+    return () => {
+      cancelled = true
+      cancelAnimationFrame(raf)
+      if (controls && perspCam && orthoCam) {
+        killBuildingFocusTweens(controls, perspCam, orthoCam)
+      }
+    }
+  }, [selectedId, scene])
+
   /* ── Scene graph: both cameras always mounted ───────────────── */
   return (
     <>
       <perspectiveCamera
         ref={perspCamRef}
-        position={[...ORBIT_CAMERA_POSITION]}
         fov={orbitFov}
         near={0.1}
         far={1000}
       />
       <orthographicCamera
         ref={orthoCamRef}
-        position={[0, mapHeight, 0]}
+        position={orthoCameraPosition}
         rotation={[-Math.PI / 2, 0, 0]}
         left={-mapViewSize}
         right={mapViewSize}
@@ -314,7 +615,6 @@ export function CameraRig({
         bottom={-mapViewSize}
         near={0.1}
         far={mapHeight * 2}
-        zoom={1}
       />
     </>
   )

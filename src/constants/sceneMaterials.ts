@@ -37,7 +37,8 @@ export interface BlueprintBuildingMaterialSettings {
 
 /**
  * Default: light electric cyan, semi-transparent, emissive — similar to a digital
- * blueprint / X-ray HUD read (see product reference).
+ * blueprint / X-ray HUD read. Surface grid on by default with a soft cyan grid
+ * so first-time visitors match the shipped “Buildings” panel preset.
  */
 export const BLUEPRINT_BUILDING_DEFAULTS: BlueprintBuildingMaterialSettings = {
   color: '#40D9FF',
@@ -52,10 +53,10 @@ export const BLUEPRINT_BUILDING_DEFAULTS: BlueprintBuildingMaterialSettings = {
   // Tuned for blueprint readability: keeps major silhouettes/creases while
   // suppressing noisy internal lines on mostly coplanar faces.
   edgeThreshold: 18,
-  showBuildingGrid: false,
-  buildingGridColor: '#5a8ca0',
-  buildingGridOpacity: 0.45,
-  buildingGridCellSize: 5,
+  showBuildingGrid: true,
+  buildingGridColor: '#AAEDFF',
+  buildingGridOpacity: 0.29,
+  buildingGridCellSize: 5.5,
 }
 
 /** Material-only tuning for the terrain plane (geometry/bounds are fixed below). */
@@ -129,10 +130,22 @@ export interface InteractionStateColor {
   bodyEmissiveIntensity?: number
   /**
    * Optional `material.opacity` for this state (0..1). Higher = more solid.
-   * Falls back to `blueprint.opacity` when undefined. SELECTED uses 1 to
-   * make the active building punch through the campus.
+   * Falls back to `blueprint.opacity` when undefined.
    */
   bodyOpacity?: number
+  /**
+   * Optional `<Edges>` line opacity. When undefined, uses `blueprint.edgeOpacity`.
+   */
+  edgeOpacity?: number
+  /**
+   * Optional rim `uIntensity` cap (hover/selected only). When undefined, uses
+   * the default from BuildingsGroup.
+   */
+  rimIntensity?: number
+  /**
+   * Multiplier on `blueprint.edgeLineWidth` for crease lines in this state.
+   */
+  edgeLineWidthScale?: number
 }
 
 /**
@@ -145,18 +158,26 @@ export const INTERACTION_STATE_COLORS = {
     rgb: 'rgb(64, 217, 255)',
   },
   HOVER: {
-    hex: '#67F0D9',
-    rgb: 'rgb(103, 240, 217)',
-    bodyHex: '#67F0D9',
-    bodyEmissiveIntensity: 1.8,
-    bodyOpacity: 0.75,
+    hex: '#7AE8F0',
+    rgb: 'rgb(122, 232, 240)',
+    bodyHex: '#5ED4E8',
+    edgeHex: '#F0FDFF',
+    bodyEmissiveIntensity: 1.25,
+    bodyOpacity: 0.52,
+    edgeOpacity: 1,
+    rimIntensity: 3.2,
+    edgeLineWidthScale: 1.12,
   },
+  /** Stronger than default blueprint, still translucent so crease edges read. */
   SELECTED: {
-    hex: '#FFC857',
-    rgb: 'rgb(255, 200, 87)',
-    bodyHex: '#FFC857',
+    hex: '#D2F8FF',
+    rgb: 'rgb(210, 248, 255)',
+    bodyHex: '#5AD0EA',
     edgeHex: '#FFFFFF',
-    bodyEmissiveIntensity: 3,
-    bodyOpacity: 1,
+    bodyEmissiveIntensity: 1.42,
+    bodyOpacity: 0.58,
+    edgeOpacity: 1,
+    rimIntensity: 2.95,
+    edgeLineWidthScale: 1.58,
   },
 } as const satisfies Record<InteractionState, InteractionStateColor>

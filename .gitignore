@@ -37,3 +37,9 @@ logs/
 .DS_Store
 .vscode/
 .cursorrules
+
+# Next.js
+.next/
+
+# TypeScript incremental
+*.tsbuildinfo

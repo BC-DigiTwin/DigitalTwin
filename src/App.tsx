@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useRef } from 'react'
+import { Suspense, useEffect, useRef, useState } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { useControls, button } from 'leva'
 import { Perf } from 'r3f-perf'
@@ -21,6 +21,14 @@ import { AssetErrorBoundary } from './components/AssetErrorBoundary'
 import { PlaceholderBox } from './components/PlaceholderBox'
 import { useHydrateLocations } from './hooks/useHydrateLocations'
 import { SceneBackground } from './components/scene/SceneBackground'
+import { SidePanel, type BuildingApiData } from './components/SidePanel'
+import { mockBuildings } from '../lib/mockDatabase'
+
+function PerfOverlay() {
+  const showPerfOverlay = useStore((s) => s.showPerfOverlay)
+  if (!showPerfOverlay) return null
+  return <Perf position="bottom-left" minimal={false} />
+}
 
 /**
  * Leva panel that exposes scene-layer visibility toggles backed by Zustand.
@@ -55,7 +63,7 @@ function LayerToggles() {
       },
       'Instanced Rim': { value: initialRef.current.instancedRim ?? false },
     },
-    { collapsed: false },
+    { collapsed: true },
   )
 
   useEffect(() => {
@@ -161,7 +169,7 @@ function BlueprintBuildingControls() {
         label: 'Surface grid cell size',
       },
     },
-    { collapsed: true },
+    { collapsed: false },
   )
 
   useEffect(() => {
@@ -295,15 +303,20 @@ function CameraRigWithControls() {
     'Orbit FOV': orbitFov,
     'Transition Speed': transitionSpeed,
     Damping: damping,
-  } = useControls('Camera', {
-    _mode: { value: mode, editable: false, label: 'Current Mode' },
-    'Toggle Mode': button(toggleMode),
-    'Map Height': { value: DEFAULT_CAMERA_SETTINGS.mapHeight, min: 20, max: 200, step: 1 },
-    'Map View Size': { value: DEFAULT_CAMERA_SETTINGS.mapViewSize, min: 10, max: 150, step: 1 },
-    'Orbit FOV': { value: DEFAULT_CAMERA_SETTINGS.orbitFov, min: 10, max: 100, step: 1 },
-    'Transition Speed': { value: DEFAULT_CAMERA_SETTINGS.transitionSpeed, min: 0.1, max: 3.0, step: 0.05 },
-    Damping: { value: DEFAULT_CAMERA_SETTINGS.damping, min: 0.01, max: 0.5, step: 0.01 },
-  }, [mode])
+  } = useControls(
+    'Camera',
+    {
+      _mode: { value: mode, editable: false, label: 'Current Mode' },
+      'Toggle Mode': button(toggleMode),
+      'Map Height': { value: DEFAULT_CAMERA_SETTINGS.mapHeight, min: 20, max: 200, step: 1 },
+      'Map View Size': { value: DEFAULT_CAMERA_SETTINGS.mapViewSize, min: 10, max: 150, step: 1 },
+      'Orbit FOV': { value: DEFAULT_CAMERA_SETTINGS.orbitFov, min: 10, max: 100, step: 1 },
+      'Transition Speed': { value: DEFAULT_CAMERA_SETTINGS.transitionSpeed, min: 0.1, max: 3.0, step: 0.05 },
+      Damping: { value: DEFAULT_CAMERA_SETTINGS.damping, min: 0.01, max: 0.5, step: 0.01 },
+    },
+    { collapsed: true },
+    [mode],
+  )
 
   // Silence unused-var for the read-only mode display
   void _mode
@@ -316,6 +329,78 @@ function CameraRigWithControls() {
   )
 }
 
+function BuildingDetailsPanel() {
+  const selectedId = useStore((s) => s.selectedId)
+  const setSelectedId = useStore((s) => s.setSelectedId)
+  const [buildingData, setBuildingData] = useState<BuildingApiData | null>(null)
+
+  useEffect(() => {
+    if (!selectedId) {
+      setBuildingData(null)
+      return
+    }
+
+    /**
+     * Data source order:
+     *   1. Try the Next.js API → real RDS row.
+     *   2. If the API returns 404 (or anything non-2xx / network error),
+     *      look up `selectedId` in `mockBuildings` as an offline fallback.
+     *   3. If neither has it, the panel renders nothing.
+     */
+    let cancelled = false
+
+    const applyMockFallback = (reason: string) => {
+      const fromMock = mockBuildings.find((b) => b.id === selectedId) ?? null
+      if (fromMock) {
+        console.log(
+          `[BuildingDetailsPanel] ${reason} — falling back to mock row for`,
+          selectedId,
+        )
+      } else {
+        console.warn(
+          `[BuildingDetailsPanel] ${reason} — no mock row either; panel stays empty for`,
+          selectedId,
+        )
+      }
+      if (!cancelled) setBuildingData(fromMock)
+    }
+
+    void fetch(`/api/buildings/${encodeURIComponent(selectedId)}`)
+      .then(async (res) => {
+        if (res.status === 404) {
+          applyMockFallback('API returned 404')
+          return
+        }
+        if (!res.ok) {
+          applyMockFallback(`API returned HTTP ${res.status}`)
+          return
+        }
+        const data = (await res.json()) as BuildingApiData
+        if (!cancelled) {
+          console.log('[BuildingDetailsPanel] API row used for', selectedId)
+          setBuildingData(data)
+        }
+      })
+      .catch((err: unknown) => {
+        applyMockFallback(`fetch failed (${(err as Error).message})`)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedId])
+
+  return (
+    <SidePanel
+      buildingData={buildingData}
+      onClose={() => {
+        setSelectedId(null)
+        setBuildingData(null)
+      }}
+    />
+  )
+}
+
 export default function App() {
   useHydrateLocations()
 
@@ -324,6 +409,7 @@ export default function App() {
       <div className="canvas-container">
         {/* HTML overlay — tracks drei's internal loading progress */}
         <LoadingScreen />
+        <BuildingDetailsPanel />
 
         <Canvas
           dpr={[1, 2]}
@@ -335,12 +421,12 @@ export default function App() {
         >
           <CameraControlProvider>
             <SceneBackground />
-            <Perf position="top-left" minimal={false} />
+            <PerfOverlay />
 
+            <BlueprintBuildingControls />
             <CameraRigWithControls />
             <LayerToggles />
             <SceneViewportControls />
-            <BlueprintBuildingControls />
             <TerrainGroundControls />
 
             {/* Non-suspending layers render immediately */}

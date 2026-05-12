@@ -39,6 +39,8 @@ const DEFAULT_LAYER_VISIBILITY: LayerVisibility = {
  */
 export interface AppState {
     debugMode: boolean
+    /** r3f-perf overlay (top-left FPS / GPU stats). */
+    showPerfOverlay: boolean
     appState: 'initial' | 'loading' | 'ready' | 'error'
     assetError: string | null
     hoveredId: string | null
@@ -62,6 +64,7 @@ export interface AppState {
  */
 export interface AppActions {
     setDebugMode: (mode: boolean) => void
+    setShowPerfOverlay: (show: boolean) => void
     setAppState: (state: AppState['appState']) => void
     setAssetError: (error: string | null) => void
     setHoveredId: (id: string | null) => void
@@ -96,6 +99,7 @@ export const useStore = create<Store>()(
         (set) => ({
             // Initial state
             debugMode: true,
+            showPerfOverlay: false,
             appState: 'initial',
             assetError: null,
             hoveredId: null,
@@ -112,6 +116,9 @@ export const useStore = create<Store>()(
             // Actions
             setDebugMode: (mode: boolean) =>
                 set({ debugMode: mode }, false, 'setDebugMode'),
+
+            setShowPerfOverlay: (show: boolean) =>
+                set({ showPerfOverlay: show }, false, 'setShowPerfOverlay'),
 
             setAppState: (state: AppState['appState']) =>
                 set({ appState: state }, false, 'setAppState'),

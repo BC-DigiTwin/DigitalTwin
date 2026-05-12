@@ -5,7 +5,7 @@ import {
   useLayoutEffect,
   useRef,
 } from 'react'
-import { useFrame, type ThreeEvent } from '@react-three/fiber'
+import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { Edges, type EdgesRef } from '@react-three/drei'
 import * as THREE from 'three'
 import { damp, dampC } from 'maath/easing'
@@ -21,8 +21,14 @@ import {
   BLUEPRINT_BUILDING_DEFAULTS,
   INTERACTION_STATE_COLORS,
   type BlueprintBuildingMaterialSettings,
+  type InteractionStateColor,
 } from '../../constants/sceneMaterials'
 import { RimLightMaterial, type RimLightMaterialHandle } from './RimLightMaterial'
+import {
+  buildingDisplayName,
+  canonicalBuildingMeshName,
+  stableBuildingId,
+} from '../../utils/buildingMeshName'
 
 /**
  * Smooth-time (seconds) for `maath/easing` damping of rim color and intensity.
@@ -32,12 +38,17 @@ import { RimLightMaterial, type RimLightMaterialHandle } from './RimLightMateria
 const INTERACTION_DAMP_SMOOTH_TIME = 0.15
 
 /**
- * Peak rim intensity for hovered/selected meshes. Higher = brighter halo.
- * `1` is the shader's natural max; values above add additive overdrive that's
- * tone-mapped down — useful since the blueprint base color is already cyan
- * so subtle rims blend into the surface.
+ * Default peak rim `uIntensity` when a state does not set `rimIntensity`.
+ * Per-state overrides live on `INTERACTION_STATE_COLORS` (HOVER / SELECTED).
  */
-const INTERACTION_RIM_INTENSITY = 5
+const DEFAULT_INTERACTION_RIM_INTENSITY = 5
+
+/**
+ * Raycasts often hit Drei `Edges` (line segments) or other children, not the
+ * R3F `<mesh>` ref. We stamp the **source** GLB mesh uuid on that mesh so any
+ * descendant can walk `parent` chains and recover `collectBuildingMeshNodes` data.
+ */
+const BUILDING_SOURCE_MESH_UUID_KEY = '__buildingSourceMeshUuid'
 
 /** Public path to the campus greybox GLB (World Origin = scene anchor). */
 export const CAMPUS_GLB_PATH = '/models/campus_greybox.glb'
@@ -100,6 +111,30 @@ export function stripImportedMaterials(root: THREE.Object3D): number {
 }
 
 /**
+ * GLTF roots often wrap every mesh in one group (e.g. named "Scene") with a
+ * single UUID. In that case `parentBuilding.id` is the same for all meshes.
+ * When the mesh itself is named `building_a`, etc., use that slug as the id
+ * so selection and mock/API rows stay per-building.
+ */
+export function resolveMeshBuildingIdentity(
+  mesh: THREE.Mesh,
+  parentBuilding: { id: string; name: string } | null,
+): { id: string; name: string } {
+  const slug = stableBuildingId(mesh)
+  if (slug !== mesh.uuid) {
+    return {
+      id: slug,
+      name: buildingDisplayName(mesh.name, parentBuilding?.name || 'Unnamed mesh'),
+    }
+  }
+  if (parentBuilding) return parentBuilding
+  return {
+    id: slug,
+    name: buildingDisplayName(mesh.name, 'Unnamed building'),
+  }
+}
+
+/**
  * Recursively walks a loaded GLB scene and returns every mesh node.
  * Each mesh is tagged with the nearest parent "building" group so callers can
  * treat all child parts (walls, roof, etc.) as one selectable building.
@@ -113,22 +148,19 @@ export function collectBuildingMeshNodes(
     (node.type === 'Scene'
       ? null
       : {
-          id: node.uuid,
-          name: node.name || 'Unnamed building',
+          id: stableBuildingId(node),
+          name: buildingDisplayName(node.name, 'Unnamed building'),
         })
 
   if (node.type === 'Mesh') {
     const mesh = node as THREE.Mesh
-    const building = parentBuilding ?? {
-      id: mesh.uuid,
-      name: mesh.name || 'Unnamed building',
-    }
+    const building = resolveMeshBuildingIdentity(mesh, parentBuilding)
 
     return [
       {
         mesh,
         meshId: mesh.uuid,
-        meshName: mesh.name || 'Unnamed mesh',
+        meshName: buildingDisplayName(mesh.name, 'Unnamed mesh'),
         buildingId: building.id,
         buildingName: building.name,
       },
@@ -269,41 +301,70 @@ function BuildingMeshNode({
   buildingId: string
   blueprint: BlueprintBuildingMaterialSettings
 }) {
+  const invalidate = useThree((s) => s.invalidate)
   const meshRef = useRef<THREE.Mesh>(null!)
   const materialApiRef = useRef<RimLightMaterialHandle | null>(null)
   const edgesRef = useRef<EdgesRef | null>(null)
   const targetColorRef = useRef(new THREE.Color(INTERACTION_STATE_COLORS.BASE.hex))
   const targetIntensityRef = useRef(0)
   const targetEdgeColorRef = useRef(new THREE.Color(blueprint.edgeColor))
+  const targetEdgeOpacityRef = useRef(blueprint.edgeOpacity)
+  const targetEdgeLinewidthRef = useRef(blueprint.edgeLineWidth)
+  const edgeOpacityWrapperRef = useRef({ value: blueprint.edgeOpacity })
+  const edgeLinewidthWrapperRef = useRef({ value: blueprint.edgeLineWidth })
   const targetBodyColorRef = useRef(new THREE.Color(blueprint.color))
   const targetEmissiveIntensityRef = useRef(blueprint.emissiveIntensity)
   const targetOpacityRef = useRef(blueprint.opacity)
   const opacityWrapperRef = useRef({ value: blueprint.opacity })
   const emissiveIntensityWrapperRef = useRef({ value: blueprint.emissiveIntensity })
+  const interactionTierRef = useRef<'base' | 'hover' | 'selected'>('base')
 
   useLayoutEffect(() => {
-    meshRef.current?.layers.enable(RENDER_LAYERS.INTERACTIVE)
-  }, [])
+    const m = meshRef.current
+    if (!m) return
+    m.layers.enable(RENDER_LAYERS.INTERACTIVE)
+    m.userData[BUILDING_SOURCE_MESH_UUID_KEY] = mesh.uuid
+    m.userData.buildingId = buildingId
+    if (mesh.name) {
+      m.name = canonicalBuildingMeshName(mesh.name.trim()) || mesh.name
+    }
+  }, [mesh.uuid, mesh.name, buildingId])
 
   const computeTargets = useCallback(
     (hoveredId: string | null, selectedId: string | null) => {
       const isSelected = selectedId === buildingId
       const isHovered = hoveredId === buildingId
-      const stateColor = isSelected
+      const stateColor: InteractionStateColor = isSelected
         ? INTERACTION_STATE_COLORS.SELECTED
         : isHovered
           ? INTERACTION_STATE_COLORS.HOVER
           : INTERACTION_STATE_COLORS.BASE
 
+      interactionTierRef.current = isSelected ? 'selected' : isHovered ? 'hover' : 'base'
+
       targetColorRef.current.set(stateColor.hex)
-      targetIntensityRef.current = isHovered || isSelected ? INTERACTION_RIM_INTENSITY : 0
+      targetIntensityRef.current =
+        isHovered || isSelected
+          ? (stateColor.rimIntensity ?? DEFAULT_INTERACTION_RIM_INTENSITY)
+          : 0
       targetEdgeColorRef.current.set(stateColor.edgeHex ?? blueprint.edgeColor)
+      targetEdgeOpacityRef.current = stateColor.edgeOpacity ?? blueprint.edgeOpacity
+      targetEdgeLinewidthRef.current =
+        blueprint.edgeLineWidth * (stateColor.edgeLineWidthScale ?? 1)
       targetBodyColorRef.current.set(stateColor.bodyHex ?? blueprint.color)
       targetEmissiveIntensityRef.current =
         stateColor.bodyEmissiveIntensity ?? blueprint.emissiveIntensity
       targetOpacityRef.current = stateColor.bodyOpacity ?? blueprint.opacity
     },
-    [buildingId, blueprint.color, blueprint.edgeColor, blueprint.emissiveIntensity, blueprint.opacity],
+    [
+      buildingId,
+      blueprint.color,
+      blueprint.edgeColor,
+      blueprint.edgeOpacity,
+      blueprint.edgeLineWidth,
+      blueprint.emissiveIntensity,
+      blueprint.opacity,
+    ],
   )
 
   useEffect(() => {
@@ -317,6 +378,33 @@ function BuildingMeshNode({
       computeTargets(state.hoveredId, state.selectedId)
     })
   }, [computeTargets])
+
+  /** Drei `<Edges>` often needs a follow-up frame after the mesh matrix is valid (line geometry / linewidth). */
+  useEffect(() => {
+    if (!blueprint.showEdges) return
+    const id = requestAnimationFrame(() => {
+      meshRef.current?.updateMatrixWorld(true)
+      const edges = edgesRef.current
+      if (edges) {
+        edges.layers.enable(RENDER_LAYERS.INTERACTIVE)
+        const raw = edges.material
+        const mats = Array.isArray(raw) ? raw : [raw]
+        for (const mat of mats) {
+          if (mat) mat.needsUpdate = true
+        }
+      }
+      invalidate()
+    })
+    return () => cancelAnimationFrame(id)
+  }, [
+    blueprint.showEdges,
+    blueprint.edgeThreshold,
+    blueprint.edgeColor,
+    blueprint.edgeOpacity,
+    blueprint.edgeLineWidth,
+    mesh.geometry,
+    invalidate,
+  ])
 
   useFrame((_, delta) => {
     const api = materialApiRef.current
@@ -351,7 +439,41 @@ function BuildingMeshNode({
 
     const edges = edgesRef.current
     if (edges) {
-      dampC(edges.material.color, targetEdgeColorRef.current, INTERACTION_DAMP_SMOOTH_TIME, delta)
+      const tier = interactionTierRef.current
+      edges.renderOrder = tier === 'selected' ? 4 : tier === 'hover' ? 2 : 1
+
+      const raw = edges.material
+      const mat = Array.isArray(raw) ? raw[0] : raw
+      if (mat && 'color' in mat) {
+        dampC(
+          mat.color as THREE.Color,
+          targetEdgeColorRef.current,
+          INTERACTION_DAMP_SMOOTH_TIME,
+          delta,
+        )
+      }
+      if (mat && 'opacity' in mat) {
+        damp(
+          edgeOpacityWrapperRef.current,
+          'value',
+          targetEdgeOpacityRef.current,
+          INTERACTION_DAMP_SMOOTH_TIME,
+          delta,
+        )
+        ;(mat as THREE.Material).transparent = edgeOpacityWrapperRef.current.value < 1
+        ;(mat as THREE.Material).opacity = edgeOpacityWrapperRef.current.value
+        ;(mat as THREE.Material).needsUpdate = true
+      }
+      if (mat && 'linewidth' in mat) {
+        damp(
+          edgeLinewidthWrapperRef.current,
+          'value',
+          targetEdgeLinewidthRef.current,
+          INTERACTION_DAMP_SMOOTH_TIME,
+          delta,
+        )
+        ;(mat as { linewidth: number }).linewidth = edgeLinewidthWrapperRef.current.value
+      }
     }
   })
 
@@ -401,13 +523,19 @@ function BuildingMeshNode({
         />
         {blueprint.showEdges ? (
           <Edges
+            key={`${mesh.geometry.uuid}-${blueprint.edgeThreshold}`}
             ref={edgesRef}
             threshold={blueprint.edgeThreshold}
             color={blueprint.edgeColor}
-            transparent={blueprint.edgeOpacity < 1}
+            transparent
             opacity={blueprint.edgeOpacity}
             linewidth={blueprint.edgeLineWidth}
+            depthTest
             depthWrite={false}
+            polygonOffset
+            polygonOffsetFactor={-1}
+            polygonOffsetUnits={-1}
+            renderOrder={1}
           />
         ) : null}
       </mesh>
@@ -424,9 +552,9 @@ function BuildingMeshNode({
 }
 
 /**
- * Recursively renders GLB scene nodes. Groups pass their uuid as buildingId so
- * all meshes under the same group (e.g. walls + roof) share one hover: when any
- * part is hovered, the whole building glows.
+ * Recursively renders GLB scene nodes. Groups pass a stable building id (see
+ * `stableBuildingId` / `collectBuildingMeshNodes`) so hover, selection, and
+ * click resolution all agree with `meshToBuildingMap`.
  */
 function SceneNode({
   node,
@@ -435,12 +563,14 @@ function SceneNode({
 }: SceneNodeProps) {
   if (node.type === 'Mesh') {
     const mesh = node as THREE.Mesh
-    const buildingId = parentBuildingId ?? mesh.uuid
+    const parentBuilding =
+      parentBuildingId !== null ? { id: parentBuildingId, name: '' } : null
+    const { id: buildingId } = resolveMeshBuildingIdentity(mesh, parentBuilding)
     return <BuildingMeshNode mesh={mesh} buildingId={buildingId} blueprint={blueprint} />
   }
 
   const obj = node as THREE.Object3D
-  const thisGroupId = node.uuid
+  const thisGroupId = parentBuildingId ?? stableBuildingId(obj)
   return (
     <group
       key={node.uuid}
@@ -505,18 +635,45 @@ export function BuildingsGroup() {
     console.info(`[BuildingsGroup] loaded ${buildingMeshNodes.length} building mesh nodes`)
   }, [buildingMeshNodes])
 
-  const handleClick = useCallback((e: ThreeEvent<MouseEvent>) => {
-    e.stopPropagation()
-    const meshEntry = meshToBuildingMap.get(e.object.uuid)
-    const nextSelectedBuildingId = meshEntry?.buildingId ?? e.object.parent?.uuid ?? e.object.uuid
-    setSelectedBuildingId(nextSelectedBuildingId)
-    const name =
-      meshEntry?.buildingName ??
-      e.object.name ??
-      e.object.parent?.name ??
-      '(unnamed)'
-    console.log('[BuildingsGroup] clicked:', name, e.point)
-  }, [meshToBuildingMap, setSelectedBuildingId])
+  const handleClick = useCallback(
+    (e: ThreeEvent<MouseEvent>) => {
+      e.stopPropagation()
+
+      let meshEntry: BuildingMeshNode | undefined
+      let o: THREE.Object3D | null = e.object
+      while (o) {
+        const sourceUuid = o.userData[BUILDING_SOURCE_MESH_UUID_KEY] as
+          | string
+          | undefined
+        if (sourceUuid) {
+          meshEntry = meshToBuildingMap.get(sourceUuid)
+          if (meshEntry) break
+        }
+        o = o.parent
+      }
+
+      const nextSelectedBuildingId =
+        meshEntry?.buildingId ?? e.object.parent?.uuid ?? e.object.uuid
+      setSelectedBuildingId(nextSelectedBuildingId)
+      const label =
+        meshEntry?.meshName ||
+        meshEntry?.buildingName ||
+        e.object.name ||
+        e.object.parent?.name ||
+        '(unnamed)'
+      console.log('[BuildingsGroup] building click → store `selectedId`:', nextSelectedBuildingId)
+      console.log('[BuildingsGroup] building click (detail)', {
+        selectedId: nextSelectedBuildingId,
+        displayLabel: label,
+        meshEntryBuildingId: meshEntry?.buildingId,
+        meshEntryMeshName: meshEntry?.meshName,
+        meshEntryBuildingName: meshEntry?.buildingName,
+        hitObjectName: e.object.name,
+        point: e.point,
+      })
+    },
+    [meshToBuildingMap, setSelectedBuildingId],
+  )
 
   const clickHandlers = useClickDragThreshold(handleClick)
 
