@@ -107,7 +107,7 @@ export const useStore = create<Store>()(
             layers: { ...DEFAULT_LAYER_VISIBILITY },
             blueprintBuildingMaterial: { ...BLUEPRINT_BUILDING_DEFAULTS },
             terrainGroundMaterial: { ...TERRAIN_GROUND_DEFAULTS },
-            terrainShowGroundPlane: true,
+            terrainShowGroundPlane: false,
             terrainShowGrid: true,
             terrainGridLineColor: TERRAIN_GROUND_GRID_COLOR,
             sceneBackgroundColor: SCENE_BACKGROUND_DEFAULT,

@@ -6,6 +6,7 @@ import { useRenderLayer } from '../../hooks/useInteractiveLayer'
 import { RENDER_LAYERS } from '../../constants/renderLayers'
 import {
   TERRAIN_GROUND_PLANE_BOUNDS,
+  TERRAIN_GROUND_PLANE_DEPTH_BIAS,
   TERRAIN_GROUND_GRID_CELL_SIZE,
 } from '../../constants/sceneMaterials'
 
@@ -101,7 +102,11 @@ export function TerrainGroup() {
   return (
     <group ref={groupRef} name="TerrainGroup" visible={visible}>
       {showGroundPlane && (
-        <mesh position={[cx, positionY, cz]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <mesh
+          position={[cx, positionY - TERRAIN_GROUND_PLANE_DEPTH_BIAS, cz]}
+          rotation={[-Math.PI / 2, 0, 0]}
+          receiveShadow
+        >
           <planeGeometry args={[width, depth]} />
           <meshStandardMaterial
             color={color}

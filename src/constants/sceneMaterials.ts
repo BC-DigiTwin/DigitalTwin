@@ -84,6 +84,16 @@ export const TERRAIN_GROUND_PLANE_BOUNDS = {
   positionY: 0,
 } as const
 
+/**
+ * Nudges the ground mesh slightly below building soles (world −Y).
+ * Campus crease edges (`Line2`) sit on the footprint at ~y = 0; the opaque
+ * ground plane at the exact same depth causes depth-buffer ties so some base
+ * outlines vanish from steep views. A tiny separation makes outlines win the
+ * depth test without relying on polygon offset (that applies to filled
+ * triangles, not wide lines).
+ */
+export const TERRAIN_GROUND_PLANE_DEPTH_BIAS = 0.01 as const
+
 /** World spacing between grid lines on the terrain plane (matches ground footprint). */
 export const TERRAIN_GROUND_GRID_CELL_SIZE = 5
 
