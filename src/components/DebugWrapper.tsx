@@ -137,6 +137,7 @@ export function DebugWrapper({ children }: DebugWrapperProps) {
               fill
               flat
               titleBar={false}
+              oneLineLabels
             />
           </div>
 

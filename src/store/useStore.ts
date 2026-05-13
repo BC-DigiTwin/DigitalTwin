@@ -7,6 +7,8 @@ import {
     TERRAIN_GROUND_DEFAULTS,
     TERRAIN_GROUND_GRID_COLOR,
     SCENE_BACKGROUND_DEFAULT,
+    SELECTION_SOLID_BODY_COLOR_DEFAULT,
+    SELECTION_SOLID_GLOW_DEFAULT,
 } from '../constants/sceneMaterials'
 
 /* ── Layer visibility ───────────────────────────────────────────── */
@@ -69,6 +71,16 @@ export interface AppState {
      * When `false`, unselected buildings keep their normal look.
      */
     selectionMuteOthersEnabled: boolean
+    /**
+     * When `true`, the selected building’s body fades to fully opaque (solid).
+     * When `false`, the selected building keeps the lighter translucent
+     * blueprint look (`INTERACTION_STATE_COLORS.SELECTED.bodyOpacity`).
+     */
+    selectionSolidSelectedEnabled: boolean
+    /** Body fill (hex) for the opaque “solid selected” style. */
+    selectionSolidBodyColor: string
+    /** Rim + emissive + hero edges for solid selected (uses SELECTED interaction tuning). */
+    selectionSolidGlowEnabled: boolean
 }
 
 /**
@@ -92,6 +104,9 @@ export interface AppActions {
     setStressTestMeshCount: (count: number) => void
     setSelectionLiftEnabled: (enabled: boolean) => void
     setSelectionMuteOthersEnabled: (enabled: boolean) => void
+    setSelectionSolidSelectedEnabled: (enabled: boolean) => void
+    setSelectionSolidBodyColor: (color: string) => void
+    setSelectionSolidGlowEnabled: (enabled: boolean) => void
 }
 
 /**
@@ -128,6 +143,9 @@ export const useStore = create<Store>()(
             stressTestMeshCount: 600,
             selectionLiftEnabled: true,
             selectionMuteOthersEnabled: true,
+            selectionSolidSelectedEnabled: false,
+            selectionSolidBodyColor: SELECTION_SOLID_BODY_COLOR_DEFAULT,
+            selectionSolidGlowEnabled: SELECTION_SOLID_GLOW_DEFAULT,
 
             // Actions
             setDebugMode: (mode: boolean) =>
@@ -209,6 +227,23 @@ export const useStore = create<Store>()(
                     { selectionMuteOthersEnabled: enabled },
                     false,
                     'setSelectionMuteOthersEnabled',
+                ),
+
+            setSelectionSolidSelectedEnabled: (enabled) =>
+                set(
+                    { selectionSolidSelectedEnabled: enabled },
+                    false,
+                    'setSelectionSolidSelectedEnabled',
+                ),
+
+            setSelectionSolidBodyColor: (color) =>
+                set({ selectionSolidBodyColor: color }, false, 'setSelectionSolidBodyColor'),
+
+            setSelectionSolidGlowEnabled: (enabled) =>
+                set(
+                    { selectionSolidGlowEnabled: enabled },
+                    false,
+                    'setSelectionSolidGlowEnabled',
                 ),
         }),
         {

@@ -5,20 +5,33 @@ import * as THREE from 'three'
 import gsap from 'gsap'
 
 import { useStore } from '../store/useStore'
-import { SELECTED_BUILDING_LIFT_AMOUNT } from '../constants/sceneMaterials'
+import {
+  SELECTED_BUILDING_LIFT_AMOUNT,
+  TERRAIN_GROUND_PLANE_BOUNDS,
+} from '../constants/sceneMaterials'
 
 /* ── Static constants (never change at runtime) ───────────────────── */
 
 const TARGET: [number, number, number] = [0, 0, 0]
 
-/** Orbit mode: perspective camera at [0, 50, 50] looking at origin. */
-const ORBIT_CAMERA_POSITION: [number, number, number] = [0, 50, 50]
+/**
+ * Default orbit load: above the SW corner of the terrain grid (−X, −Z),
+ * elevated for a steeper look down toward the campus origin (orbit target).
+ */
+const ORBIT_CAMERA_POSITION: [number, number, number] = [
+  TERRAIN_GROUND_PLANE_BOUNDS.xMin,
+  130,
+  TERRAIN_GROUND_PLANE_BOUNDS.zMin,
+]
 
 /** Distance from target on the XZ plane in the default orbit view. */
-const ORBIT_RADIUS_XZ = Math.hypot(ORBIT_CAMERA_POSITION[0], ORBIT_CAMERA_POSITION[2])
+const ORBIT_RADIUS_XZ = Math.hypot(
+  ORBIT_CAMERA_POSITION[0] - TARGET[0],
+  ORBIT_CAMERA_POSITION[2] - TARGET[2],
+)
 
 /** Height above target.y in the default orbit view. */
-const ORBIT_HEIGHT = ORBIT_CAMERA_POSITION[1]
+const ORBIT_HEIGHT = ORBIT_CAMERA_POSITION[1] - TARGET[1]
 
 /**
  * Tiny offset used when placing a camera directly above the target so that
@@ -260,7 +273,10 @@ export function CameraRig({
 
   /** Preserved azimuthal angle so Map → Orbit restores the same view. */
   const azimuthRef = useRef<number>(
-    Math.atan2(ORBIT_CAMERA_POSITION[0], ORBIT_CAMERA_POSITION[2]),
+    Math.atan2(
+      ORBIT_CAMERA_POSITION[0] - TARGET[0],
+      ORBIT_CAMERA_POSITION[2] - TARGET[2],
+    ),
   )
 
   /**

@@ -23,6 +23,9 @@ import { useHydrateLocations } from './hooks/useHydrateLocations'
 import { SceneBackground } from './components/scene/SceneBackground'
 import { SidePanel, type BuildingApiData } from './components/SidePanel'
 import { mockBuildings } from '../lib/mockDatabase'
+import {
+  SELECTION_SOLID_BODY_COLOR_DEFAULT,
+} from './constants/sceneMaterials'
 
 function PerfOverlay() {
   const showPerfOverlay = useStore((s) => s.showPerfOverlay)
@@ -220,28 +223,34 @@ function TerrainGroundControls() {
   const initialGridColorRef = useRef(useStore.getState().terrainGridLineColor)
   const d = initialRef.current
 
-  const { groundColor, roughness, metalness, showGroundPlane, showGrid, gridLineColor } =
-    useControls(
-      'Ground',
-      {
-        showGroundPlane: {
-          value: initialGroundPlaneRef.current,
-          label: 'Show ground plane',
-        },
-        groundColor: { value: d.color, label: 'Ground color' },
-        roughness: { value: d.roughness, min: 0, max: 1, step: 0.02 },
-        metalness: { value: d.metalness, min: 0, max: 1, step: 0.02 },
-        showGrid: {
-          value: initialGridRef.current,
-          label: 'Show grid',
-        },
-        gridLineColor: {
-          value: initialGridColorRef.current,
-          label: 'Grid line color',
-        },
+  const {
+    groundColor,
+    roughness,
+    metalness,
+    showGroundPlane,
+    showGrid,
+    gridLineColor,
+  } = useControls(
+    'Ground',
+    {
+      showGroundPlane: {
+        value: initialGroundPlaneRef.current,
+        label: 'Show ground plane',
       },
-      { collapsed: true },
-    )
+      groundColor: { value: d.color, label: 'Ground color' },
+      roughness: { value: d.roughness, min: 0, max: 1, step: 0.02 },
+      metalness: { value: d.metalness, min: 0, max: 1, step: 0.02 },
+      showGrid: {
+        value: initialGridRef.current,
+        label: 'Show grid',
+      },
+      gridLineColor: {
+        value: initialGridColorRef.current,
+        label: 'Grid line color',
+      },
+    },
+    { collapsed: true },
+  )
 
   useEffect(() => {
     setTerrainGroundMaterial({
@@ -269,9 +278,8 @@ function TerrainGroundControls() {
 /**
  * Leva → Zustand: showcase-selection toggles.
  *
- * Two independent switches that customize what happens when a building is
- * clicked. Both default to `true` (the polished showcase behavior); turning
- * either one off reverts that aspect to the original campus look.
+ * Switches that customize what happens when a building is clicked. Most
+ * default to `true` (polished showcase); turning one off reverts that aspect.
  *
  * Registered as a **nested subfolder inside the existing "Buildings" panel**
  * so the interaction toggles live next to the building visual settings (Leva
@@ -283,10 +291,32 @@ function SelectionBehaviorControls() {
   const setSelectionMuteOthersEnabled = useStore(
     (s) => s.setSelectionMuteOthersEnabled,
   )
+  const setSelectionSolidSelectedEnabled = useStore(
+    (s) => s.setSelectionSolidSelectedEnabled,
+  )
+  const setSelectionSolidBodyColor = useStore((s) => s.setSelectionSolidBodyColor)
+  const setSelectionSolidGlowEnabled = useStore(
+    (s) => s.setSelectionSolidGlowEnabled,
+  )
   const initialLiftRef = useRef(useStore.getState().selectionLiftEnabled)
   const initialMuteRef = useRef(useStore.getState().selectionMuteOthersEnabled)
+  const initialSolidRef = useRef(
+    useStore.getState().selectionSolidSelectedEnabled,
+  )
+  const initialSolidColorRef = useRef(
+    useStore.getState().selectionSolidBodyColor,
+  )
+  const initialSolidGlowRef = useRef(
+    useStore.getState().selectionSolidGlowEnabled,
+  )
 
-  const { liftAndRotate, muteOthers } = useControls(
+  const {
+    liftAndRotate,
+    muteOthers,
+    solidSelectedBuilding,
+    solidSelectedColor,
+    solidSelectedGlow,
+  } = useControls(
     'Buildings',
     {
       'Selection behavior': folder(
@@ -298,6 +328,18 @@ function SelectionBehaviorControls() {
           muteOthers: {
             value: initialMuteRef.current,
             label: 'Mute other buildings',
+          },
+          solidSelectedBuilding: {
+            value: initialSolidRef.current,
+            label: 'Solid selected building',
+          },
+          solidSelectedColor: {
+            value: initialSolidColorRef.current || SELECTION_SOLID_BODY_COLOR_DEFAULT,
+            label: 'Solid selected color',
+          },
+          solidSelectedGlow: {
+            value: initialSolidGlowRef.current,
+            label: 'Solid selected glow',
           },
         },
         { collapsed: false },
@@ -312,6 +354,22 @@ function SelectionBehaviorControls() {
   useEffect(() => {
     setSelectionMuteOthersEnabled(muteOthers)
   }, [muteOthers, setSelectionMuteOthersEnabled])
+
+  useEffect(() => {
+    setSelectionSolidSelectedEnabled(solidSelectedBuilding)
+  }, [solidSelectedBuilding, setSelectionSolidSelectedEnabled])
+
+  useEffect(() => {
+    const hex =
+      typeof solidSelectedColor === 'string'
+        ? solidSelectedColor
+        : SELECTION_SOLID_BODY_COLOR_DEFAULT
+    setSelectionSolidBodyColor(hex)
+  }, [solidSelectedColor, setSelectionSolidBodyColor])
+
+  useEffect(() => {
+    setSelectionSolidGlowEnabled(solidSelectedGlow)
+  }, [solidSelectedGlow, setSelectionSolidGlowEnabled])
 
   return null
 }

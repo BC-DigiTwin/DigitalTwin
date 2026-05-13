@@ -1,6 +1,7 @@
 /*
  * Single Leva panel (auto-mounted by useControls): widen panel + inputs so labels fit.
  * Do not add <Leva /> in App — that creates a second duplicate panel.
+ * Full-width labels use `oneLineLabels` on `LevaPanel` in `DebugWrapper`.
  */
 :root {
   --leva-sizes-rootWidth: 440px !important;

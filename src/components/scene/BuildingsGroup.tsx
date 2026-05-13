@@ -42,6 +42,13 @@ import {
 const INTERACTION_DAMP_SMOOTH_TIME = 0.15
 
 /**
+ * When the selected building uses the solid (opaque) style, rim/body/opacity
+ * ease with this much shorter smooth-time so it reads almost instant but
+ * still steps smoothly each frame.
+ */
+const SOLID_SELECTED_INTERACTION_DAMP_SMOOTH_TIME = 0.03
+
+/**
  * Default peak rim `uIntensity` when a state does not set `rimIntensity`.
  * Per-state overrides live on `INTERACTION_STATE_COLORS` (HOVER / SELECTED).
  */
@@ -344,6 +351,8 @@ function BuildingMeshNode({
   const liftWrapperRef = useRef({ value: 0 })
   const isSelectedFlagRef = useRef(false)
   const interactionTierRef = useRef<'base' | 'hover' | 'selected'>('base')
+  /** Solid selected: snappier material easing + no rim/emissive “glow” styling. */
+  const snappySolidSelectedRef = useRef(false)
 
   useLayoutEffect(() => {
     const m = meshRef.current
@@ -362,6 +371,9 @@ function BuildingMeshNode({
       selectedId: string | null,
       liftEnabled: boolean,
       muteOthersEnabled: boolean,
+      solidSelectedEnabled: boolean,
+      solidBodyColor: string,
+      solidGlowEnabled: boolean,
     ) => {
       const isSelected = selectedId === buildingId
       const isHovered = hoveredId === buildingId
@@ -398,6 +410,32 @@ function BuildingMeshNode({
       targetEmissiveIntensityRef.current =
         stateColor.bodyEmissiveIntensity ?? blueprint.emissiveIntensity
       targetOpacityRef.current = stateColor.bodyOpacity ?? blueprint.opacity
+
+      if (isSelected && solidSelectedEnabled) {
+        const sel = INTERACTION_STATE_COLORS.SELECTED
+        targetOpacityRef.current = 1
+        targetBodyColorRef.current.set(solidBodyColor)
+
+        if (solidGlowEnabled) {
+          targetColorRef.current.set(solidBodyColor)
+          targetIntensityRef.current =
+            sel.rimIntensity ?? DEFAULT_INTERACTION_RIM_INTENSITY
+          targetEdgeColorRef.current.set(sel.edgeHex ?? blueprint.edgeColor)
+          targetEdgeOpacityRef.current = sel.edgeOpacity ?? blueprint.edgeOpacity
+          targetEdgeLinewidthRef.current =
+            blueprint.edgeLineWidth * (sel.edgeLineWidthScale ?? 1)
+          targetEmissiveIntensityRef.current =
+            sel.bodyEmissiveIntensity ?? blueprint.emissiveIntensity
+        } else {
+          targetIntensityRef.current = 0
+          targetColorRef.current.set(INTERACTION_STATE_COLORS.BASE.hex)
+          targetEdgeColorRef.current.set(blueprint.edgeColor)
+          targetEdgeOpacityRef.current = blueprint.edgeOpacity
+          targetEdgeLinewidthRef.current = blueprint.edgeLineWidth
+          targetEmissiveIntensityRef.current = 0
+        }
+      }
+
       targetGridOpacityRef.current = blueprint.buildingGridOpacity
 
       if (isMuted) {
@@ -414,6 +452,8 @@ function BuildingMeshNode({
       targetLiftRef.current =
         liftEnabled && isSelected ? SELECTED_BUILDING_LIFT_AMOUNT : 0
       isSelectedFlagRef.current = liftEnabled && isSelected
+
+      snappySolidSelectedRef.current = isSelected && solidSelectedEnabled
     },
     [
       buildingId,
@@ -434,6 +474,9 @@ function BuildingMeshNode({
       s.selectedId,
       s.selectionLiftEnabled,
       s.selectionMuteOthersEnabled,
+      s.selectionSolidSelectedEnabled,
+      s.selectionSolidBodyColor,
+      s.selectionSolidGlowEnabled,
     )
 
     return useStore.subscribe((state, prev) => {
@@ -441,7 +484,10 @@ function BuildingMeshNode({
         state.hoveredId === prev.hoveredId &&
         state.selectedId === prev.selectedId &&
         state.selectionLiftEnabled === prev.selectionLiftEnabled &&
-        state.selectionMuteOthersEnabled === prev.selectionMuteOthersEnabled
+        state.selectionMuteOthersEnabled === prev.selectionMuteOthersEnabled &&
+        state.selectionSolidSelectedEnabled === prev.selectionSolidSelectedEnabled &&
+        state.selectionSolidBodyColor === prev.selectionSolidBodyColor &&
+        state.selectionSolidGlowEnabled === prev.selectionSolidGlowEnabled
       ) {
         return
       }
@@ -450,6 +496,9 @@ function BuildingMeshNode({
         state.selectedId,
         state.selectionLiftEnabled,
         state.selectionMuteOthersEnabled,
+        state.selectionSolidSelectedEnabled,
+        state.selectionSolidBodyColor,
+        state.selectionSolidGlowEnabled,
       )
     })
   }, [computeTargets])
@@ -482,21 +531,25 @@ function BuildingMeshNode({
   ])
 
   useFrame((_, delta) => {
+    const dampT = snappySolidSelectedRef.current
+      ? SOLID_SELECTED_INTERACTION_DAMP_SMOOTH_TIME
+      : INTERACTION_DAMP_SMOOTH_TIME
+
     const api = materialApiRef.current
     if (api) {
-      dampC(api.colorUniform.value, targetColorRef.current, INTERACTION_DAMP_SMOOTH_TIME, delta)
-      damp(api.intensityUniform, 'value', targetIntensityRef.current, INTERACTION_DAMP_SMOOTH_TIME, delta)
+      dampC(api.colorUniform.value, targetColorRef.current, dampT, delta)
+      damp(api.intensityUniform, 'value', targetIntensityRef.current, dampT, delta)
 
       const material = api.getMaterial()
       if (material) {
-        dampC(material.color, targetBodyColorRef.current, INTERACTION_DAMP_SMOOTH_TIME, delta)
-        dampC(material.emissive, targetBodyColorRef.current, INTERACTION_DAMP_SMOOTH_TIME, delta)
+        dampC(material.color, targetBodyColorRef.current, dampT, delta)
+        dampC(material.emissive, targetBodyColorRef.current, dampT, delta)
 
         damp(
           emissiveIntensityWrapperRef.current,
           'value',
           targetEmissiveIntensityRef.current,
-          INTERACTION_DAMP_SMOOTH_TIME,
+          dampT,
           delta,
         )
         material.emissiveIntensity = emissiveIntensityWrapperRef.current.value
@@ -505,10 +558,13 @@ function BuildingMeshNode({
           opacityWrapperRef.current,
           'value',
           targetOpacityRef.current,
-          INTERACTION_DAMP_SMOOTH_TIME,
+          dampT,
           delta,
         )
-        material.opacity = opacityWrapperRef.current.value
+        const o = opacityWrapperRef.current.value
+        material.opacity = o
+        material.transparent = o < 1 - 1e-4
+        material.depthWrite = o >= 1 - 1e-4
       }
     }
 
@@ -566,7 +622,7 @@ function BuildingMeshNode({
         dampC(
           mat.color as THREE.Color,
           targetEdgeColorRef.current,
-          INTERACTION_DAMP_SMOOTH_TIME,
+          dampT,
           delta,
         )
       }
@@ -575,7 +631,7 @@ function BuildingMeshNode({
           edgeOpacityWrapperRef.current,
           'value',
           targetEdgeOpacityRef.current,
-          INTERACTION_DAMP_SMOOTH_TIME,
+          dampT,
           delta,
         )
         ;(mat as THREE.Material).transparent = edgeOpacityWrapperRef.current.value < 1
@@ -587,7 +643,7 @@ function BuildingMeshNode({
           edgeLinewidthWrapperRef.current,
           'value',
           targetEdgeLinewidthRef.current,
-          INTERACTION_DAMP_SMOOTH_TIME,
+          dampT,
           delta,
         )
         ;(mat as { linewidth: number }).linewidth = edgeLinewidthWrapperRef.current.value

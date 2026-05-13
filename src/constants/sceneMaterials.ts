@@ -59,7 +59,14 @@ export const BLUEPRINT_BUILDING_DEFAULTS: BlueprintBuildingMaterialSettings = {
   buildingGridCellSize: 5.5,
 }
 
-/** Material-only tuning for the terrain plane (geometry/bounds are fixed below). */
+/** Default solid fill when “Solid selected building” is on (matches default surface grid lines). */
+export const SELECTION_SOLID_BODY_COLOR_DEFAULT =
+  BLUEPRINT_BUILDING_DEFAULTS.buildingGridColor
+
+/** Default: solid selection has no rim/emissive glow until the user turns it on. */
+export const SELECTION_SOLID_GLOW_DEFAULT = false
+
+/** Material-only tuning for the terrain plane (footprint and grid spacing live in this file). */
 export interface TerrainGroundMaterialSettings {
   color: string
   roughness: number
@@ -83,6 +90,19 @@ export const TERRAIN_GROUND_PLANE_BOUNDS = {
   zMax: 78,
   positionY: 0,
 } as const
+
+/**
+ * Campus center and default ground rectangle (matches `TERRAIN_GROUND_PLANE_BOUNDS`).
+ * Expandable ground in the scene stays centered here so buildings stay on the same spot.
+ */
+export const TERRAIN_GROUND_ANCHOR = (() => {
+  const { xMin, xMax, zMin, zMax, positionY } = TERRAIN_GROUND_PLANE_BOUNDS
+  const cx = (xMin + xMax) / 2
+  const cz = (zMin + zMax) / 2
+  const width = Math.abs(xMax - xMin)
+  const depth = Math.abs(zMax - zMin)
+  return { cx, cz, positionY, width, depth } as const
+})()
 
 /**
  * Nudges the ground mesh slightly below building soles (world −Y).

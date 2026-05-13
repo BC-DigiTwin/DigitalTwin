@@ -10,8 +10,11 @@ import {
   TERRAIN_GROUND_GRID_CELL_SIZE,
 } from '../../constants/sceneMaterials'
 
-/** Tiny lift so grid lines sit above the plane and avoid z-fighting. */
-const GRID_Y_EPSILON = 0.004
+/** Tiny lift above the biased ground mesh so lines do not z-fight the plane; stays below typical building soles (y ≈ 0). */
+const GRID_ABOVE_PLANE_EPS = 0.001
+
+/** Previously line opacity 0.62; baked into RGB so the material can stay non-transparent (correct render order vs buildings). */
+const GRID_LINE_INTENSITY = 0.62
 
 /**
  * Line grid exactly covering `x0…x1` × `z0…z1` at height `y` (same footprint as ground).
@@ -31,6 +34,12 @@ function TerrainGroundGridLines({
   y: number
   lineColor: string
 }) {
+  const materialColor = useMemo(() => {
+    const c = new THREE.Color(lineColor)
+    c.multiplyScalar(GRID_LINE_INTENSITY)
+    return `#${c.getHexString()}`
+  }, [lineColor])
+
   const geometry = useMemo(() => {
     const positions: number[] = []
     const w = x1 - x0
@@ -59,12 +68,12 @@ function TerrainGroundGridLines({
   useEffect(() => () => geometry.dispose(), [geometry])
 
   return (
-    <lineSegments geometry={geometry}>
+    <lineSegments geometry={geometry} renderOrder={-20}>
       <lineBasicMaterial
-        color={lineColor}
-        transparent
-        opacity={0.62}
-        depthWrite={false}
+        color={materialColor}
+        depthTest
+        depthWrite
+        transparent={false}
       />
     </lineSegments>
   )
@@ -97,7 +106,7 @@ export function TerrainGroup() {
   const depth = Math.max(0.01, z1 - z0)
   const cx = (x0 + x1) / 2
   const cz = (z0 + z1) / 2
-  const gridY = positionY + GRID_Y_EPSILON
+  const gridY = positionY - TERRAIN_GROUND_PLANE_DEPTH_BIAS + GRID_ABOVE_PLANE_EPS
 
   return (
     <group ref={groupRef} name="TerrainGroup" visible={visible}>
