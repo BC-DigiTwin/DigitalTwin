@@ -136,11 +136,7 @@ export function DebugWrapper({ children }: DebugWrapperProps) {
               store={levaStore}
               fill
               flat
-              titleBar={{
-                drag: false,
-                filter: true,
-                title: undefined,
-              }}
+              titleBar={false}
             />
           </div>
 
