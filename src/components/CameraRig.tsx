@@ -5,6 +5,7 @@ import * as THREE from 'three'
 import gsap from 'gsap'
 
 import { useStore } from '../store/useStore'
+import { SELECTED_BUILDING_LIFT_AMOUNT } from '../constants/sceneMaterials'
 
 /* ── Static constants (never change at runtime) ───────────────────── */
 
@@ -92,9 +93,14 @@ const _worldUp = new THREE.Vector3(0, 1, 0)
 const _axisX = new THREE.Vector3(1, 0, 0)
 
 /**
- * Angle above the XZ plane for the segment **target → camera** (so the camera
- * looks down at the target by the same angle below the horizontal).
- * 30° ≈ a typical isometric-style orbit.
+ * Angle above the XZ plane for the segment **target → camera**.
+ *
+ * Positive = camera sits above the target and looks *down* (isometric).
+ * Negative = camera sits below the target and looks *up* (hero shot).
+ *
+ * +30° gives a comfortable isometric-style showcase view: the camera sits
+ * well above the lifted building and looks clearly down on it, so the
+ * surrounding muted campus reads as context behind the hero.
  */
 const BUILDING_FOCUS_ELEVATION_DEG = 30
 
@@ -121,8 +127,12 @@ const BUILDING_FOCUS_ARC_OUT_FRAC = 0.065
 const BUILDING_FOCUS_PANEL_SHIFT_MIN = 3.5
 const BUILDING_FOCUS_PANEL_SHIFT_FRAC = 0.16
 
-/** Building-focus moves last a bit longer than generic camera transitions. */
-const BUILDING_FOCUS_DURATION_MULT = 1.18
+/**
+ * Building-focus moves should feel synced with the selected-building lift.
+ * With the default 0.8s transition speed this lands around 0.36s: quick
+ * enough to match the 0.2s lift easing without making long camera moves snap.
+ */
+const BUILDING_FOCUS_DURATION_MULT = 0.45
 
 /** Map: multiply fitted zoom by this (<1 = zoom out more) for breathing room. */
 const BUILDING_FOCUS_MAP_ZOOM_FRAC = 0.82
@@ -165,8 +175,16 @@ function computeFittedOrbitPosition(
   azimuthRad: number,
   outLookTarget: THREE.Vector3,
   outPosition: THREE.Vector3,
+  /**
+   * Extra world-space Y offset to pre-shift the framing center by. When the
+   * "selection lift" toggle is on we pass `SELECTED_BUILDING_LIFT_AMOUNT`
+   * so the camera arrives where the lifted building will end up; when the
+   * toggle is off we pass `0` so framing stays at the base building.
+   */
+  centerYOffset: number,
 ): void {
   bounds.getCenter(_buildCenter)
+  _buildCenter.y += centerYOffset
   bounds.getBoundingSphere(_boundingSphere)
   const r = Math.max(_boundingSphere.radius, 0.5) * BUILDING_FOCUS_RADIUS_PAD
 
@@ -470,6 +488,10 @@ export function CameraRig({
 
       const { transitionSpeed: duration, mapHeight: height, mapViewSize } =
         settingsRef.current
+      // Read at focus-time so toggling the setting between selections takes
+      // effect immediately on the next click.
+      const liftEnabled = useStore.getState().selectionLiftEnabled
+      const centerYOffset = liftEnabled ? SELECTED_BUILDING_LIFT_AMOUNT : 0
       controls.enabled = false
 
       const orthoActive = controls.object === orthoCam
@@ -486,7 +508,14 @@ export function CameraRig({
         const sy = cam.position.y
         const sz = cam.position.z
 
-        computeFittedOrbitPosition(cam, _buildingFocusBox, azimuth, _focusNewTarget, _focusNewPos)
+        computeFittedOrbitPosition(
+          cam,
+          _buildingFocusBox,
+          azimuth,
+          _focusNewTarget,
+          _focusNewPos,
+          centerYOffset,
+        )
 
         cam.position.set(sx, sy, sz)
 

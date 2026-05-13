@@ -111,6 +111,37 @@ export const RIM_LIGHT_DEFAULTS = {
   uPulseSpeed: 2,
 } as const
 
+/**
+ * How high (world units) the selected building floats above its base position.
+ * Tuned in tandem with `BUILDING_FOCUS_ELEVATION_DEG` (CameraRig): the
+ * selected building needs enough vertical separation that a shallow showcase
+ * camera angle can keep neighboring rooftops out of the way.
+ */
+export const SELECTED_BUILDING_LIFT_AMOUNT = 26
+
+/** Radians per second the selected building rotates around its local Y axis. */
+export const SELECTED_BUILDING_SPIN_SPEED = 0.35
+
+/**
+ * `maath/easing` smooth-time (seconds) for the lift-up / lower-down move.
+ *
+ * Lower = snappier. ~0.2s gives a quick, responsive "pop up / drop down"
+ * that still reads as an animation rather than a hard snap.
+ */
+export const SELECTED_BUILDING_LIFT_SMOOTH_TIME = 0.2
+
+/**
+ * Multipliers applied to an *unselected* building's appearance while another
+ * building is selected — pushes the rest of the campus visually into the
+ * background so the focused building reads as the hero.
+ */
+export const MUTED_INTERACTION_MULTIPLIERS = {
+  bodyOpacity: 0.18,
+  emissiveIntensity: 0.2,
+  edgeOpacity: 0.28,
+  gridOpacity: 0.18,
+} as const
+
 /** Canonical interaction states used for mesh highlighting. */
 export const INTERACTION_STATES = ['BASE', 'HOVER', 'SELECTED'] as const
 

@@ -57,6 +57,18 @@ export interface AppState {
     sceneBackgroundColor: string
     /** Stress test instanced mesh grid count (see Layer Visibility when stress layer is on). */
     stressTestMeshCount: number
+    /**
+     * When `true`, selecting a building lifts it upward and slowly rotates it.
+     * When `false`, the selected building stays at its base position and
+     * orientation (matches the original pre-showcase behavior).
+     */
+    selectionLiftEnabled: boolean
+    /**
+     * When `true`, the *other* buildings fade to a muted appearance while one
+     * building is selected (lower opacity, dimmer glow, lighter edges).
+     * When `false`, unselected buildings keep their normal look.
+     */
+    selectionMuteOthersEnabled: boolean
 }
 
 /**
@@ -78,6 +90,8 @@ export interface AppActions {
     setTerrainGridLineColor: (color: string) => void
     setSceneBackgroundColor: (color: string) => void
     setStressTestMeshCount: (count: number) => void
+    setSelectionLiftEnabled: (enabled: boolean) => void
+    setSelectionMuteOthersEnabled: (enabled: boolean) => void
 }
 
 /**
@@ -112,6 +126,8 @@ export const useStore = create<Store>()(
             terrainGridLineColor: TERRAIN_GROUND_GRID_COLOR,
             sceneBackgroundColor: SCENE_BACKGROUND_DEFAULT,
             stressTestMeshCount: 600,
+            selectionLiftEnabled: true,
+            selectionMuteOthersEnabled: true,
 
             // Actions
             setDebugMode: (mode: boolean) =>
@@ -184,6 +200,16 @@ export const useStore = create<Store>()(
 
             setStressTestMeshCount: (count) =>
                 set({ stressTestMeshCount: count }, false, 'setStressTestMeshCount'),
+
+            setSelectionLiftEnabled: (enabled) =>
+                set({ selectionLiftEnabled: enabled }, false, 'setSelectionLiftEnabled'),
+
+            setSelectionMuteOthersEnabled: (enabled) =>
+                set(
+                    { selectionMuteOthersEnabled: enabled },
+                    false,
+                    'setSelectionMuteOthersEnabled',
+                ),
         }),
         {
             name: 'TwinCampus-Store', // Name shown in Redux DevTools

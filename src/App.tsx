@@ -1,6 +1,6 @@
 import { Suspense, useEffect, useRef, useState } from 'react'
 import { Canvas } from '@react-three/fiber'
-import { useControls, button } from 'leva'
+import { useControls, button, folder } from 'leva'
 import { Perf } from 'r3f-perf'
 import { CameraRig, DEFAULT_CAMERA_SETTINGS } from './components/CameraRig'
 import {
@@ -266,6 +266,56 @@ function TerrainGroundControls() {
   return null
 }
 
+/**
+ * Leva → Zustand: showcase-selection toggles.
+ *
+ * Two independent switches that customize what happens when a building is
+ * clicked. Both default to `true` (the polished showcase behavior); turning
+ * either one off reverts that aspect to the original campus look.
+ *
+ * Registered as a **nested subfolder inside the existing "Buildings" panel**
+ * so the interaction toggles live next to the building visual settings (Leva
+ * automatically merges multiple `useControls` calls that share a parent
+ * folder name).
+ */
+function SelectionBehaviorControls() {
+  const setSelectionLiftEnabled = useStore((s) => s.setSelectionLiftEnabled)
+  const setSelectionMuteOthersEnabled = useStore(
+    (s) => s.setSelectionMuteOthersEnabled,
+  )
+  const initialLiftRef = useRef(useStore.getState().selectionLiftEnabled)
+  const initialMuteRef = useRef(useStore.getState().selectionMuteOthersEnabled)
+
+  const { liftAndRotate, muteOthers } = useControls(
+    'Buildings',
+    {
+      'Selection behavior': folder(
+        {
+          liftAndRotate: {
+            value: initialLiftRef.current,
+            label: 'Lift & rotate selected',
+          },
+          muteOthers: {
+            value: initialMuteRef.current,
+            label: 'Mute other buildings',
+          },
+        },
+        { collapsed: false },
+      ),
+    },
+  )
+
+  useEffect(() => {
+    setSelectionLiftEnabled(liftAndRotate)
+  }, [liftAndRotate, setSelectionLiftEnabled])
+
+  useEffect(() => {
+    setSelectionMuteOthersEnabled(muteOthers)
+  }, [muteOthers, setSelectionMuteOthersEnabled])
+
+  return null
+}
+
 /** Leva → Zustand: viewport / clear color (`scene.background`). */
 function SceneViewportControls() {
   const setSceneBackgroundColor = useStore((s) => s.setSceneBackgroundColor)
@@ -426,6 +476,7 @@ export default function App() {
             <BlueprintBuildingControls />
             <CameraRigWithControls />
             <LayerToggles />
+            <SelectionBehaviorControls />
             <SceneViewportControls />
             <TerrainGroundControls />
 
