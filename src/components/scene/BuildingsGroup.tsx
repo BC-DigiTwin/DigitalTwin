@@ -175,13 +175,14 @@ export function collectBuildingMeshNodes(
 }
 
 const BUILDING_GRID_VERTEX_SHADER = /* glsl */ `
-varying vec3 vWorldPosition;
-varying vec3 vWorldNormal;
+varying vec3 vLocalPosition;
+varying vec3 vLocalNormal;
 
 void main() {
-  vec4 wp = modelMatrix * vec4(position, 1.0);
-  vWorldPosition = wp.xyz;
-  vWorldNormal = normalize(mat3(modelMatrix) * normal);
+  // Triplanar sampling uses mesh-local coords so roofs/floors keep a grid that
+  // rotates with the mesh (world-space XZ would stay map-aligned while the body spins).
+  vLocalPosition = position;
+  vLocalNormal = normalize(normal);
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }
 `
@@ -192,8 +193,8 @@ uniform float uOpacity;
 uniform float uCellSize;
 uniform float uLinePx;
 
-varying vec3 vWorldPosition;
-varying vec3 vWorldNormal;
+varying vec3 vLocalPosition;
+varying vec3 vLocalNormal;
 
 float squareGridLines(vec2 uv, float cell, float linePx) {
   vec2 coord = fract(uv / cell);
@@ -206,13 +207,13 @@ float squareGridLines(vec2 uv, float cell, float linePx) {
 }
 
 void main() {
-  vec3 an = abs(normalize(vWorldNormal));
+  vec3 an = abs(vLocalNormal);
   float sum = an.x + an.y + an.z + 1e-5;
   vec3 w = an / sum;
 
-  float gx = squareGridLines(vWorldPosition.yz, uCellSize, uLinePx);
-  float gy = squareGridLines(vWorldPosition.xz, uCellSize, uLinePx);
-  float gz = squareGridLines(vWorldPosition.xy, uCellSize, uLinePx);
+  float gx = squareGridLines(vLocalPosition.yz, uCellSize, uLinePx);
+  float gy = squareGridLines(vLocalPosition.xz, uCellSize, uLinePx);
+  float gz = squareGridLines(vLocalPosition.xy, uCellSize, uLinePx);
 
   float lines = gx * w.x + gy * w.y + gz * w.z;
   float alpha = lines * uOpacity;
@@ -222,7 +223,7 @@ void main() {
 `
 
 /**
- * Square world-axis grid on mesh surfaces (triplanar blend). Independent of crease edges.
+ * Square grid on mesh surfaces (triplanar in mesh-local space). Independent of crease edges.
  *
  * `externalMaterialRef` (optional) lets the parent dampen `uOpacity` per-frame
  * for muted/selected states without forcing a re-render of this overlay.

@@ -27,11 +27,11 @@ export interface BlueprintBuildingMaterialSettings {
   showEdges: boolean
   /** Degrees between face normals below which two faces are smoothed together (drei `<Edges>` / `EdgesGeometry`). Higher = fewer lines. */
   edgeThreshold: number
-  /** World-axis square grid on façades (triplanar shader overlay). */
+  /** Square grid on façades (triplanar overlay in mesh-local space, rotates with the mesh). */
   showBuildingGrid: boolean
   buildingGridColor: string
   buildingGridOpacity: number
-  /** World units between parallel grid lines (matches terrain spacing if desired). */
+  /** Mesh-local spacing between parallel grid lines (often comparable to world meters for greybox assets). */
   buildingGridCellSize: number
 }
 
