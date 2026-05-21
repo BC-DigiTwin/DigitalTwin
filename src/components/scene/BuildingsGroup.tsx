@@ -286,8 +286,8 @@ function BuildingMeshNode({
   }, [])
 
   const computeTargets = useCallback(
-    (hoveredId: string | null, selectedId: string | null) => {
-      const isSelected = selectedId === buildingId
+    (hoveredId: string | null, selectedEntity: string | null) => {
+      const isSelected = selectedEntity === buildingId
       const isHovered = hoveredId === buildingId
       const stateColor = isSelected
         ? INTERACTION_STATE_COLORS.SELECTED
@@ -307,14 +307,14 @@ function BuildingMeshNode({
   )
 
   useEffect(() => {
-    const { hoveredId, selectedId } = useStore.getState()
-    computeTargets(hoveredId, selectedId)
+    const { hoveredId, selectedEntity } = useStore.getState()
+    computeTargets(hoveredId, selectedEntity)
 
     return useStore.subscribe((state, prev) => {
-      if (state.hoveredId === prev.hoveredId && state.selectedId === prev.selectedId) {
+      if (state.hoveredId === prev.hoveredId && state.selectedEntity === prev.selectedEntity) {
         return
       }
-      computeTargets(state.hoveredId, state.selectedId)
+      computeTargets(state.hoveredId, state.selectedEntity)
     })
   }, [computeTargets])
 
@@ -478,7 +478,7 @@ function SceneNode({
 export function BuildingsGroup() {
   const visible = useStore((s) => s.layers.buildings)
   const blueprint = useStore((s) => s.blueprintBuildingMaterial)
-  const setSelectedBuildingId = useStore((s) => s.setSelectedId)
+  const setSelectedBuildingId = useStore((s) => s.setSelectedEntity)
   const gltf = useAssetLoader(CAMPUS_GLB_PATH)
 
   useInteractiveLayer(gltf.scene)
