@@ -46,7 +46,7 @@ export interface AppState {
     appState: 'initial' | 'loading' | 'ready' | 'error'
     assetError: string | null
     hoveredId: string | null
-    selectedId: string | null
+    selectedEntity: string | null
     layers: LayerVisibility
     blueprintBuildingMaterial: BlueprintBuildingMaterialSettings
     terrainGroundMaterial: TerrainGroundMaterialSettings
@@ -92,6 +92,7 @@ export interface AppActions {
     setAppState: (state: AppState['appState']) => void
     setAssetError: (error: string | null) => void
     setHoveredId: (id: string | null) => void
+    setSelectedEntity: (id: string | null) => void
     setSelectedId: (id: string | null) => void
     toggleLayer: (layer: LayerName) => void
     setLayerVisible: (layer: LayerName, visible: boolean) => void
@@ -132,7 +133,7 @@ export const useStore = create<Store>()(
             appState: 'initial',
             assetError: null,
             hoveredId: null,
-            selectedId: null,
+            selectedEntity: null,
             layers: { ...DEFAULT_LAYER_VISIBILITY },
             blueprintBuildingMaterial: { ...BLUEPRINT_BUILDING_DEFAULTS },
             terrainGroundMaterial: { ...TERRAIN_GROUND_DEFAULTS },
@@ -163,8 +164,11 @@ export const useStore = create<Store>()(
             setHoveredId: (id: string | null) =>
                 set({ hoveredId: id }, false, 'setHoveredId'),
 
+            setSelectedEntity: (id: string | null) =>
+                set({ selectedEntity: id }, false, 'setSelectedEntity'),
+
             setSelectedId: (id: string | null) =>
-                set({ selectedId: id }, false, 'setSelectedId'),
+                set({ selectedEntity: id }, false, 'setSelectedId'),
 
             toggleLayer: (layer: LayerName) =>
                 set(
@@ -251,3 +255,6 @@ export const useStore = create<Store>()(
         }
     )
 )
+
+export const selectedEntitySelector = (state: AppState): string | null =>
+    state.selectedEntity

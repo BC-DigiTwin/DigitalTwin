@@ -12,7 +12,7 @@ import { TerrainGroup } from './components/scene/TerrainGroup'
 import { StressTestGroup } from './components/scene/StressTestGroup'
 import { InstancedRimExample } from './components/scene/InstancedRimExample'
 import { LoadingScreen } from './components/LoadingScreen'
-import { useStore, type LayerName } from './store/useStore'
+import { selectedEntitySelector, useStore, type LayerName } from './store/useStore'
 import './App.css'
 import { ACESFilmicToneMapping, SRGBColorSpace } from 'three'
 import { RENDER_LAYERS } from './constants/renderLayers'
@@ -22,11 +22,11 @@ import { PlaceholderBox } from './components/PlaceholderBox'
 import { useHydrateLocations } from './hooks/useHydrateLocations'
 import { SceneBackground } from './components/scene/SceneBackground'
 import { SidePanel, type BuildingApiData } from './components/SidePanel'
+import { InfoPanel } from './components/InfoPanel'
 import { mockBuildings } from '../lib/mockDatabase'
 import {
   SELECTION_SOLID_BODY_COLOR_DEFAULT,
 } from './constants/sceneMaterials'
-
 function PerfOverlay() {
   const showPerfOverlay = useStore((s) => s.showPerfOverlay)
   if (!showPerfOverlay) return null
@@ -438,12 +438,12 @@ function CameraRigWithControls() {
 }
 
 function BuildingDetailsPanel() {
-  const selectedId = useStore((s) => s.selectedId)
-  const setSelectedId = useStore((s) => s.setSelectedId)
+  const selectedEntity = useStore(selectedEntitySelector)
+  const setSelectedEntity = useStore((s) => s.setSelectedEntity)
   const [buildingData, setBuildingData] = useState<BuildingApiData | null>(null)
 
   useEffect(() => {
-    if (!selectedId) {
+    if (!selectedEntity) {
       setBuildingData(null)
       return
     }
@@ -452,28 +452,28 @@ function BuildingDetailsPanel() {
      * Data source order:
      *   1. Try the Next.js API → real RDS row.
      *   2. If the API returns 404 (or anything non-2xx / network error),
-     *      look up `selectedId` in `mockBuildings` as an offline fallback.
+     *      look up `selectedEntity` in `mockBuildings` as an offline fallback.
      *   3. If neither has it, the panel renders nothing.
      */
     let cancelled = false
 
     const applyMockFallback = (reason: string) => {
-      const fromMock = mockBuildings.find((b) => b.id === selectedId) ?? null
+      const fromMock = mockBuildings.find((b) => b.id === selectedEntity) ?? null
       if (fromMock) {
         console.log(
           `[BuildingDetailsPanel] ${reason} — falling back to mock row for`,
-          selectedId,
+          selectedEntity,
         )
       } else {
         console.warn(
           `[BuildingDetailsPanel] ${reason} — no mock row either; panel stays empty for`,
-          selectedId,
+          selectedEntity,
         )
       }
       if (!cancelled) setBuildingData(fromMock)
     }
 
-    void fetch(`/api/buildings/${encodeURIComponent(selectedId)}`)
+    void fetch(`/api/buildings/${encodeURIComponent(selectedEntity)}`)
       .then(async (res) => {
         if (res.status === 404) {
           applyMockFallback('API returned 404')
@@ -485,7 +485,7 @@ function BuildingDetailsPanel() {
         }
         const data = (await res.json()) as BuildingApiData
         if (!cancelled) {
-          console.log('[BuildingDetailsPanel] API row used for', selectedId)
+          console.log('[BuildingDetailsPanel] API row used for', selectedEntity)
           setBuildingData(data)
         }
       })
@@ -496,13 +496,13 @@ function BuildingDetailsPanel() {
     return () => {
       cancelled = true
     }
-  }, [selectedId])
+  }, [selectedEntity])
 
   return (
     <SidePanel
       buildingData={buildingData}
       onClose={() => {
-        setSelectedId(null)
+        setSelectedEntity(null)
         setBuildingData(null)
       }}
     />
@@ -555,6 +555,7 @@ export default function App() {
             </AssetErrorBoundary>
           </CameraControlProvider>
         </Canvas>
+        <InfoPanel />
       </div>
     </DebugWrapper>
   )

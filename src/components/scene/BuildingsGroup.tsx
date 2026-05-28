@@ -368,14 +368,14 @@ function BuildingMeshNode({
   const computeTargets = useCallback(
     (
       hoveredId: string | null,
-      selectedId: string | null,
+      selectedEntity: string | null,
       liftEnabled: boolean,
       muteOthersEnabled: boolean,
       solidSelectedEnabled: boolean,
       solidBodyColor: string,
       solidGlowEnabled: boolean,
     ) => {
-      const isSelected = selectedId === buildingId
+      const isSelected = selectedEntity === buildingId
       const isHovered = hoveredId === buildingId
       /**
        * Some *other* building is selected → this building should fade into
@@ -383,7 +383,7 @@ function BuildingMeshNode({
        * styling is also suppressed while muted so the focused building
        * remains the clear hero.
        */
-      const isMuted = muteOthersEnabled && selectedId !== null && !isSelected
+      const isMuted = muteOthersEnabled && selectedEntity !== null && !isSelected
 
       const stateColor: InteractionStateColor = isSelected
         ? INTERACTION_STATE_COLORS.SELECTED
@@ -471,7 +471,7 @@ function BuildingMeshNode({
     const s = useStore.getState()
     computeTargets(
       s.hoveredId,
-      s.selectedId,
+      s.selectedEntity,
       s.selectionLiftEnabled,
       s.selectionMuteOthersEnabled,
       s.selectionSolidSelectedEnabled,
@@ -482,7 +482,7 @@ function BuildingMeshNode({
     return useStore.subscribe((state, prev) => {
       if (
         state.hoveredId === prev.hoveredId &&
-        state.selectedId === prev.selectedId &&
+        state.selectedEntity === prev.selectedEntity &&
         state.selectionLiftEnabled === prev.selectionLiftEnabled &&
         state.selectionMuteOthersEnabled === prev.selectionMuteOthersEnabled &&
         state.selectionSolidSelectedEnabled === prev.selectionSolidSelectedEnabled &&
@@ -493,7 +493,7 @@ function BuildingMeshNode({
       }
       computeTargets(
         state.hoveredId,
-        state.selectedId,
+        state.selectedEntity,
         state.selectionLiftEnabled,
         state.selectionMuteOthersEnabled,
         state.selectionSolidSelectedEnabled,
@@ -785,7 +785,7 @@ function SceneNode({
 export function BuildingsGroup() {
   const visible = useStore((s) => s.layers.buildings)
   const blueprint = useStore((s) => s.blueprintBuildingMaterial)
-  const setSelectedBuildingId = useStore((s) => s.setSelectedId)
+  const setSelectedBuildingId = useStore((s) => s.setSelectedEntity)
   const gltf = useAssetLoader(CAMPUS_GLB_PATH)
 
   useInteractiveLayer(gltf.scene)

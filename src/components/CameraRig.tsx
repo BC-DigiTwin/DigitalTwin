@@ -259,7 +259,7 @@ export function CameraRig({
   const set = useThree((s) => s.set)
   const size = useThree((s) => s.size)
   const scene = useThree((s) => s.scene)
-  const selectedId = useStore((s) => s.selectedId)
+  const selectedEntity = useStore((s) => s.selectedEntity)
 
   const { mapHeight, mapViewSize, orbitFov, damping } = settings
 
@@ -477,7 +477,7 @@ export function CameraRig({
     const perspCam = perspCamRef.current
     const orthoCam = orthoCamRef.current
 
-    if (!selectedId) {
+    if (!selectedEntity) {
       if (controls && perspCam && orthoCam) {
         killBuildingFocusTweens(controls, perspCam, orthoCam)
       }
@@ -486,7 +486,7 @@ export function CameraRig({
 
     if (!controls || !perspCam || !orthoCam) return
 
-    const buildingId = selectedId
+    const buildingId = selectedEntity
     let raf = 0
     let cancelled = false
 
@@ -639,7 +639,7 @@ export function CameraRig({
         killBuildingFocusTweens(controls, perspCam, orthoCam)
       }
     }
-  }, [selectedId, scene])
+  }, [selectedEntity, scene])
 
   /* ── Scene graph: both cameras always mounted ───────────────── */
   return (
