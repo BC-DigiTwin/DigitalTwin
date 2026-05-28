@@ -5,7 +5,7 @@ import {
   useLayoutEffect,
   useRef,
 } from 'react'
-import { useFrame, type ThreeEvent } from '@react-three/fiber'
+import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { Edges, type EdgesRef } from '@react-three/drei'
 import * as THREE from 'three'
 import { damp, dampC } from 'maath/easing'
@@ -20,9 +20,19 @@ import { RENDER_LAYERS } from '../../constants/renderLayers'
 import {
   BLUEPRINT_BUILDING_DEFAULTS,
   INTERACTION_STATE_COLORS,
+  MUTED_INTERACTION_MULTIPLIERS,
+  SELECTED_BUILDING_LIFT_AMOUNT,
+  SELECTED_BUILDING_LIFT_SMOOTH_TIME,
+  SELECTED_BUILDING_SPIN_SPEED,
   type BlueprintBuildingMaterialSettings,
+  type InteractionStateColor,
 } from '../../constants/sceneMaterials'
 import { RimLightMaterial, type RimLightMaterialHandle } from './RimLightMaterial'
+import {
+  buildingDisplayName,
+  canonicalBuildingMeshName,
+  stableBuildingId,
+} from '../../utils/buildingMeshName'
 
 /**
  * Smooth-time (seconds) for `maath/easing` damping of rim color and intensity.
@@ -32,15 +42,27 @@ import { RimLightMaterial, type RimLightMaterialHandle } from './RimLightMateria
 const INTERACTION_DAMP_SMOOTH_TIME = 0.15
 
 /**
- * Peak rim intensity for hovered/selected meshes. Higher = brighter halo.
- * `1` is the shader's natural max; values above add additive overdrive that's
- * tone-mapped down — useful since the blueprint base color is already cyan
- * so subtle rims blend into the surface.
+ * When the selected building uses the solid (opaque) style, rim/body/opacity
+ * ease with this much shorter smooth-time so it reads almost instant but
+ * still steps smoothly each frame.
  */
-const INTERACTION_RIM_INTENSITY = 5
+const SOLID_SELECTED_INTERACTION_DAMP_SMOOTH_TIME = 0.03
+
+/**
+ * Default peak rim `uIntensity` when a state does not set `rimIntensity`.
+ * Per-state overrides live on `INTERACTION_STATE_COLORS` (HOVER / SELECTED).
+ */
+const DEFAULT_INTERACTION_RIM_INTENSITY = 5
+
+/**
+ * Raycasts often hit Drei `Edges` (line segments) or other children, not the
+ * R3F `<mesh>` ref. We stamp the **source** GLB mesh uuid on that mesh so any
+ * descendant can walk `parent` chains and recover `collectBuildingMeshNodes` data.
+ */
+const BUILDING_SOURCE_MESH_UUID_KEY = '__buildingSourceMeshUuid'
 
 /** Public path to the campus greybox GLB (World Origin = scene anchor). */
-export const CAMPUS_GLB_PATH = '/models/campus_greybox.glb'
+export const CAMPUS_GLB_PATH = '/models/campus_greybox_all.glb'
 
 // Preload so Suspense can resolve when BuildingsGroup mounts
 useAssetLoader.preload(CAMPUS_GLB_PATH)
@@ -100,6 +122,30 @@ export function stripImportedMaterials(root: THREE.Object3D): number {
 }
 
 /**
+ * GLTF roots often wrap every mesh in one group (e.g. named "Scene") with a
+ * single UUID. In that case `parentBuilding.id` is the same for all meshes.
+ * When the mesh itself is named `building_a`, etc., use that slug as the id
+ * so selection and mock/API rows stay per-building.
+ */
+export function resolveMeshBuildingIdentity(
+  mesh: THREE.Mesh,
+  parentBuilding: { id: string; name: string } | null,
+): { id: string; name: string } {
+  const slug = stableBuildingId(mesh)
+  if (slug !== mesh.uuid) {
+    return {
+      id: slug,
+      name: buildingDisplayName(mesh.name, parentBuilding?.name || 'Unnamed mesh'),
+    }
+  }
+  if (parentBuilding) return parentBuilding
+  return {
+    id: slug,
+    name: buildingDisplayName(mesh.name, 'Unnamed building'),
+  }
+}
+
+/**
  * Recursively walks a loaded GLB scene and returns every mesh node.
  * Each mesh is tagged with the nearest parent "building" group so callers can
  * treat all child parts (walls, roof, etc.) as one selectable building.
@@ -113,22 +159,19 @@ export function collectBuildingMeshNodes(
     (node.type === 'Scene'
       ? null
       : {
-          id: node.uuid,
-          name: node.name || 'Unnamed building',
+          id: stableBuildingId(node),
+          name: buildingDisplayName(node.name, 'Unnamed building'),
         })
 
   if (node.type === 'Mesh') {
     const mesh = node as THREE.Mesh
-    const building = parentBuilding ?? {
-      id: mesh.uuid,
-      name: mesh.name || 'Unnamed building',
-    }
+    const building = resolveMeshBuildingIdentity(mesh, parentBuilding)
 
     return [
       {
         mesh,
         meshId: mesh.uuid,
-        meshName: mesh.name || 'Unnamed mesh',
+        meshName: buildingDisplayName(mesh.name, 'Unnamed mesh'),
         buildingId: building.id,
         buildingName: building.name,
       },
@@ -139,13 +182,14 @@ export function collectBuildingMeshNodes(
 }
 
 const BUILDING_GRID_VERTEX_SHADER = /* glsl */ `
-varying vec3 vWorldPosition;
-varying vec3 vWorldNormal;
+varying vec3 vLocalPosition;
+varying vec3 vLocalNormal;
 
 void main() {
-  vec4 wp = modelMatrix * vec4(position, 1.0);
-  vWorldPosition = wp.xyz;
-  vWorldNormal = normalize(mat3(modelMatrix) * normal);
+  // Triplanar sampling uses mesh-local coords so roofs/floors keep a grid that
+  // rotates with the mesh (world-space XZ would stay map-aligned while the body spins).
+  vLocalPosition = position;
+  vLocalNormal = normalize(normal);
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }
 `
@@ -156,8 +200,8 @@ uniform float uOpacity;
 uniform float uCellSize;
 uniform float uLinePx;
 
-varying vec3 vWorldPosition;
-varying vec3 vWorldNormal;
+varying vec3 vLocalPosition;
+varying vec3 vLocalNormal;
 
 float squareGridLines(vec2 uv, float cell, float linePx) {
   vec2 coord = fract(uv / cell);
@@ -170,13 +214,13 @@ float squareGridLines(vec2 uv, float cell, float linePx) {
 }
 
 void main() {
-  vec3 an = abs(normalize(vWorldNormal));
+  vec3 an = abs(vLocalNormal);
   float sum = an.x + an.y + an.z + 1e-5;
   vec3 w = an / sum;
 
-  float gx = squareGridLines(vWorldPosition.yz, uCellSize, uLinePx);
-  float gy = squareGridLines(vWorldPosition.xz, uCellSize, uLinePx);
-  float gz = squareGridLines(vWorldPosition.xy, uCellSize, uLinePx);
+  float gx = squareGridLines(vLocalPosition.yz, uCellSize, uLinePx);
+  float gy = squareGridLines(vLocalPosition.xz, uCellSize, uLinePx);
+  float gz = squareGridLines(vLocalPosition.xy, uCellSize, uLinePx);
 
   float lines = gx * w.x + gy * w.y + gz * w.z;
   float alpha = lines * uOpacity;
@@ -186,7 +230,10 @@ void main() {
 `
 
 /**
- * Square world-axis grid on mesh surfaces (triplanar blend). Independent of crease edges.
+ * Square grid on mesh surfaces (triplanar in mesh-local space). Independent of crease edges.
+ *
+ * `externalMaterialRef` (optional) lets the parent dampen `uOpacity` per-frame
+ * for muted/selected states without forcing a re-render of this overlay.
  */
 function BuildingSquareGridOverlay({
   geometry,
@@ -195,6 +242,7 @@ function BuildingSquareGridOverlay({
   cellSize,
   doubleSide,
   visible,
+  externalMaterialRef,
 }: {
   geometry: THREE.BufferGeometry
   color: string
@@ -202,6 +250,7 @@ function BuildingSquareGridOverlay({
   cellSize: number
   doubleSide: boolean
   visible: boolean
+  externalMaterialRef?: React.MutableRefObject<THREE.ShaderMaterial | null>
 }) {
   // R3F does not reliably apply a new `uniforms` object to an existing ShaderMaterial when
   // props change — keep one stable object; actual values are pushed in useLayoutEffect.
@@ -231,7 +280,10 @@ function BuildingSquareGridOverlay({
   return (
     <mesh geometry={geometry} raycast={() => undefined}>
       <shaderMaterial
-        ref={materialRef}
+        ref={(mat) => {
+          materialRef.current = mat
+          if (externalMaterialRef) externalMaterialRef.current = mat
+        }}
         uniforms={uniforms}
         vertexShader={BUILDING_GRID_VERTEX_SHADER}
         fragmentShader={BUILDING_GRID_FRAGMENT_SHADER}
@@ -269,71 +321,235 @@ function BuildingMeshNode({
   buildingId: string
   blueprint: BlueprintBuildingMaterialSettings
 }) {
+  const invalidate = useThree((s) => s.invalidate)
   const meshRef = useRef<THREE.Mesh>(null!)
+  /**
+   * Inner pivot group: this is the node we translate (lift) and rotate
+   * (slow spin) when the building is selected. Keeping it separate from
+   * the outer placement group means lift/spin happen around the building's
+   * own local origin instead of the world origin.
+   */
+  const pivotGroupRef = useRef<THREE.Group>(null)
   const materialApiRef = useRef<RimLightMaterialHandle | null>(null)
   const edgesRef = useRef<EdgesRef | null>(null)
+  const gridMaterialRef = useRef<THREE.ShaderMaterial | null>(null)
   const targetColorRef = useRef(new THREE.Color(INTERACTION_STATE_COLORS.BASE.hex))
   const targetIntensityRef = useRef(0)
   const targetEdgeColorRef = useRef(new THREE.Color(blueprint.edgeColor))
+  const targetEdgeOpacityRef = useRef(blueprint.edgeOpacity)
+  const targetEdgeLinewidthRef = useRef(blueprint.edgeLineWidth)
+  const edgeOpacityWrapperRef = useRef({ value: blueprint.edgeOpacity })
+  const edgeLinewidthWrapperRef = useRef({ value: blueprint.edgeLineWidth })
   const targetBodyColorRef = useRef(new THREE.Color(blueprint.color))
   const targetEmissiveIntensityRef = useRef(blueprint.emissiveIntensity)
   const targetOpacityRef = useRef(blueprint.opacity)
   const opacityWrapperRef = useRef({ value: blueprint.opacity })
   const emissiveIntensityWrapperRef = useRef({ value: blueprint.emissiveIntensity })
+  const targetGridOpacityRef = useRef(blueprint.buildingGridOpacity)
+  const gridOpacityWrapperRef = useRef({ value: blueprint.buildingGridOpacity })
+  const targetLiftRef = useRef(0)
+  const liftWrapperRef = useRef({ value: 0 })
+  const isSelectedFlagRef = useRef(false)
+  const interactionTierRef = useRef<'base' | 'hover' | 'selected'>('base')
+  /** Solid selected: snappier material easing + no rim/emissive “glow” styling. */
+  const snappySolidSelectedRef = useRef(false)
 
   useLayoutEffect(() => {
-    meshRef.current?.layers.enable(RENDER_LAYERS.INTERACTIVE)
-  }, [])
+    const m = meshRef.current
+    if (!m) return
+    m.layers.enable(RENDER_LAYERS.INTERACTIVE)
+    m.userData[BUILDING_SOURCE_MESH_UUID_KEY] = mesh.uuid
+    m.userData.buildingId = buildingId
+    if (mesh.name) {
+      m.name = canonicalBuildingMeshName(mesh.name.trim()) || mesh.name
+    }
+  }, [mesh.uuid, mesh.name, buildingId])
 
   const computeTargets = useCallback(
-    (hoveredId: string | null, selectedEntity: string | null) => {
+    (
+      hoveredId: string | null,
+      selectedEntity: string | null,
+      liftEnabled: boolean,
+      muteOthersEnabled: boolean,
+      solidSelectedEnabled: boolean,
+      solidBodyColor: string,
+      solidGlowEnabled: boolean,
+    ) => {
       const isSelected = selectedEntity === buildingId
       const isHovered = hoveredId === buildingId
-      const stateColor = isSelected
+      /**
+       * Some *other* building is selected → this building should fade into
+       * the background (only when the mute-others toggle is on). Hover
+       * styling is also suppressed while muted so the focused building
+       * remains the clear hero.
+       */
+      const isMuted = muteOthersEnabled && selectedEntity !== null && !isSelected
+
+      const stateColor: InteractionStateColor = isSelected
         ? INTERACTION_STATE_COLORS.SELECTED
-        : isHovered
+        : isHovered && !isMuted
           ? INTERACTION_STATE_COLORS.HOVER
           : INTERACTION_STATE_COLORS.BASE
 
+      interactionTierRef.current = isSelected
+        ? 'selected'
+        : isHovered && !isMuted
+          ? 'hover'
+          : 'base'
+
       targetColorRef.current.set(stateColor.hex)
-      targetIntensityRef.current = isHovered || isSelected ? INTERACTION_RIM_INTENSITY : 0
+      targetIntensityRef.current =
+        isSelected || (isHovered && !isMuted)
+          ? (stateColor.rimIntensity ?? DEFAULT_INTERACTION_RIM_INTENSITY)
+          : 0
       targetEdgeColorRef.current.set(stateColor.edgeHex ?? blueprint.edgeColor)
+      targetEdgeOpacityRef.current = stateColor.edgeOpacity ?? blueprint.edgeOpacity
+      targetEdgeLinewidthRef.current =
+        blueprint.edgeLineWidth * (stateColor.edgeLineWidthScale ?? 1)
       targetBodyColorRef.current.set(stateColor.bodyHex ?? blueprint.color)
       targetEmissiveIntensityRef.current =
         stateColor.bodyEmissiveIntensity ?? blueprint.emissiveIntensity
       targetOpacityRef.current = stateColor.bodyOpacity ?? blueprint.opacity
+
+      if (isSelected && solidSelectedEnabled) {
+        const sel = INTERACTION_STATE_COLORS.SELECTED
+        targetOpacityRef.current = 1
+        targetBodyColorRef.current.set(solidBodyColor)
+
+        if (solidGlowEnabled) {
+          targetColorRef.current.set(solidBodyColor)
+          targetIntensityRef.current =
+            sel.rimIntensity ?? DEFAULT_INTERACTION_RIM_INTENSITY
+          targetEdgeColorRef.current.set(sel.edgeHex ?? blueprint.edgeColor)
+          targetEdgeOpacityRef.current = sel.edgeOpacity ?? blueprint.edgeOpacity
+          targetEdgeLinewidthRef.current =
+            blueprint.edgeLineWidth * (sel.edgeLineWidthScale ?? 1)
+          targetEmissiveIntensityRef.current =
+            sel.bodyEmissiveIntensity ?? blueprint.emissiveIntensity
+        } else {
+          targetIntensityRef.current = 0
+          targetColorRef.current.set(INTERACTION_STATE_COLORS.BASE.hex)
+          targetEdgeColorRef.current.set(blueprint.edgeColor)
+          targetEdgeOpacityRef.current = blueprint.edgeOpacity
+          targetEdgeLinewidthRef.current = blueprint.edgeLineWidth
+          targetEmissiveIntensityRef.current = 0
+        }
+      }
+
+      targetGridOpacityRef.current = blueprint.buildingGridOpacity
+
+      if (isMuted) {
+        targetOpacityRef.current *= MUTED_INTERACTION_MULTIPLIERS.bodyOpacity
+        targetEmissiveIntensityRef.current *=
+          MUTED_INTERACTION_MULTIPLIERS.emissiveIntensity
+        targetEdgeOpacityRef.current *= MUTED_INTERACTION_MULTIPLIERS.edgeOpacity
+        targetGridOpacityRef.current *= MUTED_INTERACTION_MULTIPLIERS.gridOpacity
+      }
+
+      // Lift + spin only when the selection lift toggle is on. Turning it off
+      // also stops accumulating spin, and the per-frame "settle" branch eases
+      // the pivot back to its base position and nearest clean rotation.
+      targetLiftRef.current =
+        liftEnabled && isSelected ? SELECTED_BUILDING_LIFT_AMOUNT : 0
+      isSelectedFlagRef.current = liftEnabled && isSelected
+
+      snappySolidSelectedRef.current = isSelected && solidSelectedEnabled
     },
-    [buildingId, blueprint.color, blueprint.edgeColor, blueprint.emissiveIntensity, blueprint.opacity],
+    [
+      buildingId,
+      blueprint.color,
+      blueprint.edgeColor,
+      blueprint.edgeOpacity,
+      blueprint.edgeLineWidth,
+      blueprint.emissiveIntensity,
+      blueprint.opacity,
+      blueprint.buildingGridOpacity,
+    ],
   )
 
   useEffect(() => {
-    const { hoveredId, selectedEntity } = useStore.getState()
-    computeTargets(hoveredId, selectedEntity)
+    const s = useStore.getState()
+    computeTargets(
+      s.hoveredId,
+      s.selectedEntity,
+      s.selectionLiftEnabled,
+      s.selectionMuteOthersEnabled,
+      s.selectionSolidSelectedEnabled,
+      s.selectionSolidBodyColor,
+      s.selectionSolidGlowEnabled,
+    )
 
     return useStore.subscribe((state, prev) => {
-      if (state.hoveredId === prev.hoveredId && state.selectedEntity === prev.selectedEntity) {
+      if (
+        state.hoveredId === prev.hoveredId &&
+        state.selectedEntity === prev.selectedEntity &&
+        state.selectionLiftEnabled === prev.selectionLiftEnabled &&
+        state.selectionMuteOthersEnabled === prev.selectionMuteOthersEnabled &&
+        state.selectionSolidSelectedEnabled === prev.selectionSolidSelectedEnabled &&
+        state.selectionSolidBodyColor === prev.selectionSolidBodyColor &&
+        state.selectionSolidGlowEnabled === prev.selectionSolidGlowEnabled
+      ) {
         return
       }
-      computeTargets(state.hoveredId, state.selectedEntity)
+      computeTargets(
+        state.hoveredId,
+        state.selectedEntity,
+        state.selectionLiftEnabled,
+        state.selectionMuteOthersEnabled,
+        state.selectionSolidSelectedEnabled,
+        state.selectionSolidBodyColor,
+        state.selectionSolidGlowEnabled,
+      )
     })
   }, [computeTargets])
 
+  /** Drei `<Edges>` often needs a follow-up frame after the mesh matrix is valid (line geometry / linewidth). */
+  useEffect(() => {
+    if (!blueprint.showEdges) return
+    const id = requestAnimationFrame(() => {
+      meshRef.current?.updateMatrixWorld(true)
+      const edges = edgesRef.current
+      if (edges) {
+        edges.layers.enable(RENDER_LAYERS.INTERACTIVE)
+        const raw = edges.material
+        const mats = Array.isArray(raw) ? raw : [raw]
+        for (const mat of mats) {
+          if (mat) mat.needsUpdate = true
+        }
+      }
+      invalidate()
+    })
+    return () => cancelAnimationFrame(id)
+  }, [
+    blueprint.showEdges,
+    blueprint.edgeThreshold,
+    blueprint.edgeColor,
+    blueprint.edgeOpacity,
+    blueprint.edgeLineWidth,
+    mesh.geometry,
+    invalidate,
+  ])
+
   useFrame((_, delta) => {
+    const dampT = snappySolidSelectedRef.current
+      ? SOLID_SELECTED_INTERACTION_DAMP_SMOOTH_TIME
+      : INTERACTION_DAMP_SMOOTH_TIME
+
     const api = materialApiRef.current
     if (api) {
-      dampC(api.colorUniform.value, targetColorRef.current, INTERACTION_DAMP_SMOOTH_TIME, delta)
-      damp(api.intensityUniform, 'value', targetIntensityRef.current, INTERACTION_DAMP_SMOOTH_TIME, delta)
+      dampC(api.colorUniform.value, targetColorRef.current, dampT, delta)
+      damp(api.intensityUniform, 'value', targetIntensityRef.current, dampT, delta)
 
       const material = api.getMaterial()
       if (material) {
-        dampC(material.color, targetBodyColorRef.current, INTERACTION_DAMP_SMOOTH_TIME, delta)
-        dampC(material.emissive, targetBodyColorRef.current, INTERACTION_DAMP_SMOOTH_TIME, delta)
+        dampC(material.color, targetBodyColorRef.current, dampT, delta)
+        dampC(material.emissive, targetBodyColorRef.current, dampT, delta)
 
         damp(
           emissiveIntensityWrapperRef.current,
           'value',
           targetEmissiveIntensityRef.current,
-          INTERACTION_DAMP_SMOOTH_TIME,
+          dampT,
           delta,
         )
         material.emissiveIntensity = emissiveIntensityWrapperRef.current.value
@@ -342,16 +558,96 @@ function BuildingMeshNode({
           opacityWrapperRef.current,
           'value',
           targetOpacityRef.current,
-          INTERACTION_DAMP_SMOOTH_TIME,
+          dampT,
           delta,
         )
-        material.opacity = opacityWrapperRef.current.value
+        const o = opacityWrapperRef.current.value
+        material.opacity = o
+        material.transparent = o < 1 - 1e-4
+        material.depthWrite = o >= 1 - 1e-4
+      }
+    }
+
+    const gridMat = gridMaterialRef.current
+    if (gridMat) {
+      damp(
+        gridOpacityWrapperRef.current,
+        'value',
+        targetGridOpacityRef.current,
+        INTERACTION_DAMP_SMOOTH_TIME,
+        delta,
+      )
+      gridMat.uniforms.uOpacity.value = gridOpacityWrapperRef.current.value
+    }
+
+    const pivot = pivotGroupRef.current
+    if (pivot) {
+      damp(
+        liftWrapperRef.current,
+        'value',
+        targetLiftRef.current,
+        SELECTED_BUILDING_LIFT_SMOOTH_TIME,
+        delta,
+      )
+      pivot.position.y = liftWrapperRef.current.value
+
+      if (isSelectedFlagRef.current) {
+        // Active selection: keep accumulating yaw so the building slowly spins.
+        pivot.rotation.y += SELECTED_BUILDING_SPIN_SPEED * delta
+      } else {
+        // Deselected: settle back to the nearest "clean" orientation (multiple
+        // of 2π) so the building returns to its original facing without a
+        // jarring reverse-spin from large angle accumulations.
+        const cur = pivot.rotation.y
+        const TWO_PI = Math.PI * 2
+        const nearest = Math.round(cur / TWO_PI) * TWO_PI
+        damp(
+          pivot.rotation,
+          'y',
+          nearest,
+          SELECTED_BUILDING_LIFT_SMOOTH_TIME,
+          delta,
+        )
       }
     }
 
     const edges = edgesRef.current
     if (edges) {
-      dampC(edges.material.color, targetEdgeColorRef.current, INTERACTION_DAMP_SMOOTH_TIME, delta)
+      const tier = interactionTierRef.current
+      edges.renderOrder = tier === 'selected' ? 4 : tier === 'hover' ? 2 : 1
+
+      const raw = edges.material
+      const mat = Array.isArray(raw) ? raw[0] : raw
+      if (mat && 'color' in mat) {
+        dampC(
+          mat.color as THREE.Color,
+          targetEdgeColorRef.current,
+          dampT,
+          delta,
+        )
+      }
+      if (mat && 'opacity' in mat) {
+        damp(
+          edgeOpacityWrapperRef.current,
+          'value',
+          targetEdgeOpacityRef.current,
+          dampT,
+          delta,
+        )
+        ;(mat as THREE.Material).transparent = edgeOpacityWrapperRef.current.value < 1
+        ;(mat as THREE.Material).opacity = edgeOpacityWrapperRef.current.value
+        ;(mat as THREE.Material).needsUpdate = true
+      }
+      if (mat && 'linewidth' in mat) {
+        damp(
+          edgeLinewidthWrapperRef.current,
+          'value',
+          targetEdgeLinewidthRef.current,
+          dampT,
+          delta,
+        )
+        ;(mat as { linewidth: number }).linewidth = edgeLinewidthWrapperRef.current.value
+      }
     }
   })
 
@@ -377,56 +673,65 @@ function BuildingMeshNode({
       quaternion={mesh.quaternion.clone()}
       scale={mesh.scale.clone()}
     >
-      <mesh
-        ref={meshRef}
-        geometry={mesh.geometry}
-        castShadow
-        receiveShadow
-        onPointerOver={handlePointerOver}
-        onPointerOut={handlePointerOut}
-      >
-        <RimLightMaterial
-          ref={materialApiRef}
-          color={blueprint.color}
-          transparent={blueprint.opacity < 1}
-          opacity={blueprint.opacity}
-          emissive={blueprint.color}
-          emissiveIntensity={blueprint.emissiveIntensity}
-          metalness={0}
-          roughness={0.92}
-          depthWrite={false}
-          side={blueprint.doubleSide ? THREE.DoubleSide : THREE.FrontSide}
-          uColor={INTERACTION_STATE_COLORS.BASE.hex}
-          uIntensity={0}
-        />
-        {blueprint.showEdges ? (
-          <Edges
-            ref={edgesRef}
-            threshold={blueprint.edgeThreshold}
-            color={blueprint.edgeColor}
-            transparent={blueprint.edgeOpacity < 1}
-            opacity={blueprint.edgeOpacity}
-            linewidth={blueprint.edgeLineWidth}
+      <group ref={pivotGroupRef}>
+        <mesh
+          ref={meshRef}
+          geometry={mesh.geometry}
+          castShadow
+          receiveShadow
+          onPointerOver={handlePointerOver}
+          onPointerOut={handlePointerOut}
+        >
+          <RimLightMaterial
+            ref={materialApiRef}
+            color={blueprint.color}
+            transparent={blueprint.opacity < 1}
+            opacity={blueprint.opacity}
+            emissive={blueprint.color}
+            emissiveIntensity={blueprint.emissiveIntensity}
+            metalness={0}
+            roughness={0.92}
             depthWrite={false}
+            side={blueprint.doubleSide ? THREE.DoubleSide : THREE.FrontSide}
+            uColor={INTERACTION_STATE_COLORS.BASE.hex}
+            uIntensity={0}
           />
-        ) : null}
-      </mesh>
-      <BuildingSquareGridOverlay
-        geometry={mesh.geometry}
-        color={blueprint.buildingGridColor}
-        opacity={blueprint.buildingGridOpacity}
-        cellSize={blueprint.buildingGridCellSize}
-        doubleSide={blueprint.doubleSide}
-        visible={blueprint.showBuildingGrid}
-      />
+          {blueprint.showEdges ? (
+            <Edges
+              key={`${mesh.geometry.uuid}-${blueprint.edgeThreshold}`}
+              ref={edgesRef}
+              threshold={blueprint.edgeThreshold}
+              color={blueprint.edgeColor}
+              transparent
+              opacity={blueprint.edgeOpacity}
+              linewidth={blueprint.edgeLineWidth}
+              depthTest
+              depthWrite={false}
+              polygonOffset
+              polygonOffsetFactor={-1}
+              polygonOffsetUnits={-1}
+              renderOrder={1}
+            />
+          ) : null}
+        </mesh>
+        <BuildingSquareGridOverlay
+          geometry={mesh.geometry}
+          color={blueprint.buildingGridColor}
+          opacity={blueprint.buildingGridOpacity}
+          cellSize={blueprint.buildingGridCellSize}
+          doubleSide={blueprint.doubleSide}
+          visible={blueprint.showBuildingGrid}
+          externalMaterialRef={gridMaterialRef}
+        />
+      </group>
     </group>
   )
 }
 
 /**
- * Recursively renders GLB scene nodes. Groups pass their uuid as buildingId so
- * all meshes under the same group (e.g. walls + roof) share one hover: when any
- * part is hovered, the whole building glows.
+ * Recursively renders GLB scene nodes. Groups pass a stable building id (see
+ * `stableBuildingId` / `collectBuildingMeshNodes`) so hover, selection, and
+ * click resolution all agree with `meshToBuildingMap`.
  */
 function SceneNode({
   node,
@@ -435,12 +740,14 @@ function SceneNode({
 }: SceneNodeProps) {
   if (node.type === 'Mesh') {
     const mesh = node as THREE.Mesh
-    const buildingId = parentBuildingId ?? mesh.uuid
+    const parentBuilding =
+      parentBuildingId !== null ? { id: parentBuildingId, name: '' } : null
+    const { id: buildingId } = resolveMeshBuildingIdentity(mesh, parentBuilding)
     return <BuildingMeshNode mesh={mesh} buildingId={buildingId} blueprint={blueprint} />
   }
 
   const obj = node as THREE.Object3D
-  const thisGroupId = node.uuid
+  const thisGroupId = parentBuildingId ?? stableBuildingId(obj)
   return (
     <group
       key={node.uuid}
@@ -505,18 +812,45 @@ export function BuildingsGroup() {
     console.info(`[BuildingsGroup] loaded ${buildingMeshNodes.length} building mesh nodes`)
   }, [buildingMeshNodes])
 
-  const handleClick = useCallback((e: ThreeEvent<MouseEvent>) => {
-    e.stopPropagation()
-    const meshEntry = meshToBuildingMap.get(e.object.uuid)
-    const nextSelectedBuildingId = meshEntry?.buildingId ?? e.object.parent?.uuid ?? e.object.uuid
-    setSelectedBuildingId(nextSelectedBuildingId)
-    const name =
-      meshEntry?.buildingName ??
-      e.object.name ??
-      e.object.parent?.name ??
-      '(unnamed)'
-    console.log('[BuildingsGroup] clicked:', name, e.point)
-  }, [meshToBuildingMap, setSelectedBuildingId])
+  const handleClick = useCallback(
+    (e: ThreeEvent<MouseEvent>) => {
+      e.stopPropagation()
+
+      let meshEntry: BuildingMeshNode | undefined
+      let o: THREE.Object3D | null = e.object
+      while (o) {
+        const sourceUuid = o.userData[BUILDING_SOURCE_MESH_UUID_KEY] as
+          | string
+          | undefined
+        if (sourceUuid) {
+          meshEntry = meshToBuildingMap.get(sourceUuid)
+          if (meshEntry) break
+        }
+        o = o.parent
+      }
+
+      const nextSelectedBuildingId =
+        meshEntry?.buildingId ?? e.object.parent?.uuid ?? e.object.uuid
+      setSelectedBuildingId(nextSelectedBuildingId)
+      const label =
+        meshEntry?.meshName ||
+        meshEntry?.buildingName ||
+        e.object.name ||
+        e.object.parent?.name ||
+        '(unnamed)'
+      console.log('[BuildingsGroup] building click → store `selectedId`:', nextSelectedBuildingId)
+      console.log('[BuildingsGroup] building click (detail)', {
+        selectedId: nextSelectedBuildingId,
+        displayLabel: label,
+        meshEntryBuildingId: meshEntry?.buildingId,
+        meshEntryMeshName: meshEntry?.meshName,
+        meshEntryBuildingName: meshEntry?.buildingName,
+        hitObjectName: e.object.name,
+        point: e.point,
+      })
+    },
+    [meshToBuildingMap, setSelectedBuildingId],
+  )
 
   const clickHandlers = useClickDragThreshold(handleClick)
 

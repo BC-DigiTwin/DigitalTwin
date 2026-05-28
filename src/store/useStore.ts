@@ -7,6 +7,8 @@ import {
     TERRAIN_GROUND_DEFAULTS,
     TERRAIN_GROUND_GRID_COLOR,
     SCENE_BACKGROUND_DEFAULT,
+    SELECTION_SOLID_BODY_COLOR_DEFAULT,
+    SELECTION_SOLID_GLOW_DEFAULT,
 } from '../constants/sceneMaterials'
 
 /* ── Layer visibility ───────────────────────────────────────────── */
@@ -39,6 +41,8 @@ const DEFAULT_LAYER_VISIBILITY: LayerVisibility = {
  */
 export interface AppState {
     debugMode: boolean
+    /** r3f-perf overlay (top-left FPS / GPU stats). */
+    showPerfOverlay: boolean
     appState: 'initial' | 'loading' | 'ready' | 'error'
     assetError: string | null
     hoveredId: string | null
@@ -55,6 +59,28 @@ export interface AppState {
     sceneBackgroundColor: string
     /** Stress test instanced mesh grid count (see Layer Visibility when stress layer is on). */
     stressTestMeshCount: number
+    /**
+     * When `true`, selecting a building lifts it upward and slowly rotates it.
+     * When `false`, the selected building stays at its base position and
+     * orientation (matches the original pre-showcase behavior).
+     */
+    selectionLiftEnabled: boolean
+    /**
+     * When `true`, the *other* buildings fade to a muted appearance while one
+     * building is selected (lower opacity, dimmer glow, lighter edges).
+     * When `false`, unselected buildings keep their normal look.
+     */
+    selectionMuteOthersEnabled: boolean
+    /**
+     * When `true`, the selected building’s body fades to fully opaque (solid).
+     * When `false`, the selected building keeps the lighter translucent
+     * blueprint look (`INTERACTION_STATE_COLORS.SELECTED.bodyOpacity`).
+     */
+    selectionSolidSelectedEnabled: boolean
+    /** Body fill (hex) for the opaque “solid selected” style. */
+    selectionSolidBodyColor: string
+    /** Rim + emissive + hero edges for solid selected (uses SELECTED interaction tuning). */
+    selectionSolidGlowEnabled: boolean
 }
 
 /**
@@ -62,6 +88,7 @@ export interface AppState {
  */
 export interface AppActions {
     setDebugMode: (mode: boolean) => void
+    setShowPerfOverlay: (show: boolean) => void
     setAppState: (state: AppState['appState']) => void
     setAssetError: (error: string | null) => void
     setHoveredId: (id: string | null) => void
@@ -76,6 +103,11 @@ export interface AppActions {
     setTerrainGridLineColor: (color: string) => void
     setSceneBackgroundColor: (color: string) => void
     setStressTestMeshCount: (count: number) => void
+    setSelectionLiftEnabled: (enabled: boolean) => void
+    setSelectionMuteOthersEnabled: (enabled: boolean) => void
+    setSelectionSolidSelectedEnabled: (enabled: boolean) => void
+    setSelectionSolidBodyColor: (color: string) => void
+    setSelectionSolidGlowEnabled: (enabled: boolean) => void
 }
 
 /**
@@ -97,6 +129,7 @@ export const useStore = create<Store>()(
         (set) => ({
             // Initial state
             debugMode: true,
+            showPerfOverlay: false,
             appState: 'initial',
             assetError: null,
             hoveredId: null,
@@ -104,15 +137,23 @@ export const useStore = create<Store>()(
             layers: { ...DEFAULT_LAYER_VISIBILITY },
             blueprintBuildingMaterial: { ...BLUEPRINT_BUILDING_DEFAULTS },
             terrainGroundMaterial: { ...TERRAIN_GROUND_DEFAULTS },
-            terrainShowGroundPlane: true,
+            terrainShowGroundPlane: false,
             terrainShowGrid: true,
             terrainGridLineColor: TERRAIN_GROUND_GRID_COLOR,
             sceneBackgroundColor: SCENE_BACKGROUND_DEFAULT,
             stressTestMeshCount: 600,
+            selectionLiftEnabled: true,
+            selectionMuteOthersEnabled: true,
+            selectionSolidSelectedEnabled: false,
+            selectionSolidBodyColor: SELECTION_SOLID_BODY_COLOR_DEFAULT,
+            selectionSolidGlowEnabled: SELECTION_SOLID_GLOW_DEFAULT,
 
             // Actions
             setDebugMode: (mode: boolean) =>
                 set({ debugMode: mode }, false, 'setDebugMode'),
+
+            setShowPerfOverlay: (show: boolean) =>
+                set({ showPerfOverlay: show }, false, 'setShowPerfOverlay'),
 
             setAppState: (state: AppState['appState']) =>
                 set({ appState: state }, false, 'setAppState'),
@@ -181,6 +222,33 @@ export const useStore = create<Store>()(
 
             setStressTestMeshCount: (count) =>
                 set({ stressTestMeshCount: count }, false, 'setStressTestMeshCount'),
+
+            setSelectionLiftEnabled: (enabled) =>
+                set({ selectionLiftEnabled: enabled }, false, 'setSelectionLiftEnabled'),
+
+            setSelectionMuteOthersEnabled: (enabled) =>
+                set(
+                    { selectionMuteOthersEnabled: enabled },
+                    false,
+                    'setSelectionMuteOthersEnabled',
+                ),
+
+            setSelectionSolidSelectedEnabled: (enabled) =>
+                set(
+                    { selectionSolidSelectedEnabled: enabled },
+                    false,
+                    'setSelectionSolidSelectedEnabled',
+                ),
+
+            setSelectionSolidBodyColor: (color) =>
+                set({ selectionSolidBodyColor: color }, false, 'setSelectionSolidBodyColor'),
+
+            setSelectionSolidGlowEnabled: (enabled) =>
+                set(
+                    { selectionSolidGlowEnabled: enabled },
+                    false,
+                    'setSelectionSolidGlowEnabled',
+                ),
         }),
         {
             name: 'TwinCampus-Store', // Name shown in Redux DevTools

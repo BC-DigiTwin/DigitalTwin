@@ -27,17 +27,18 @@ export interface BlueprintBuildingMaterialSettings {
   showEdges: boolean
   /** Degrees between face normals below which two faces are smoothed together (drei `<Edges>` / `EdgesGeometry`). Higher = fewer lines. */
   edgeThreshold: number
-  /** World-axis square grid on façades (triplanar shader overlay). */
+  /** Square grid on façades (triplanar overlay in mesh-local space, rotates with the mesh). */
   showBuildingGrid: boolean
   buildingGridColor: string
   buildingGridOpacity: number
-  /** World units between parallel grid lines (matches terrain spacing if desired). */
+  /** Mesh-local spacing between parallel grid lines (often comparable to world meters for greybox assets). */
   buildingGridCellSize: number
 }
 
 /**
  * Default: light electric cyan, semi-transparent, emissive — similar to a digital
- * blueprint / X-ray HUD read (see product reference).
+ * blueprint / X-ray HUD read. Surface grid on by default with a soft cyan grid
+ * so first-time visitors match the shipped “Buildings” panel preset.
  */
 export const BLUEPRINT_BUILDING_DEFAULTS: BlueprintBuildingMaterialSettings = {
   color: '#40D9FF',
@@ -52,13 +53,20 @@ export const BLUEPRINT_BUILDING_DEFAULTS: BlueprintBuildingMaterialSettings = {
   // Tuned for blueprint readability: keeps major silhouettes/creases while
   // suppressing noisy internal lines on mostly coplanar faces.
   edgeThreshold: 18,
-  showBuildingGrid: false,
-  buildingGridColor: '#5a8ca0',
-  buildingGridOpacity: 0.45,
-  buildingGridCellSize: 5,
+  showBuildingGrid: true,
+  buildingGridColor: '#AAEDFF',
+  buildingGridOpacity: 0.29,
+  buildingGridCellSize: 5.5,
 }
 
-/** Material-only tuning for the terrain plane (geometry/bounds are fixed below). */
+/** Default solid fill when “Solid selected building” is on (matches default surface grid lines). */
+export const SELECTION_SOLID_BODY_COLOR_DEFAULT =
+  BLUEPRINT_BUILDING_DEFAULTS.buildingGridColor
+
+/** Default: solid selection has no rim/emissive glow until the user turns it on. */
+export const SELECTION_SOLID_GLOW_DEFAULT = false
+
+/** Material-only tuning for the terrain plane (footprint and grid spacing live in this file). */
 export interface TerrainGroundMaterialSettings {
   color: string
   roughness: number
@@ -76,12 +84,35 @@ export const TERRAIN_GROUND_DEFAULTS: TerrainGroundMaterialSettings = {
  * West / East = X, South / North = Z.
  */
 export const TERRAIN_GROUND_PLANE_BOUNDS = {
-  xMin: -108,
-  xMax: 128,
-  zMin: -228,
-  zMax: 78,
+  xMin: -122,
+  xMax: 291,
+  zMin: -623,
+  zMax: 212,
   positionY: 0,
 } as const
+
+/**
+ * Campus center and default ground rectangle (matches `TERRAIN_GROUND_PLANE_BOUNDS`).
+ * Expandable ground in the scene stays centered here so buildings stay on the same spot.
+ */
+export const TERRAIN_GROUND_ANCHOR = (() => {
+  const { xMin, xMax, zMin, zMax, positionY } = TERRAIN_GROUND_PLANE_BOUNDS
+  const cx = (xMin + xMax) / 2
+  const cz = (zMin + zMax) / 2
+  const width = Math.abs(xMax - xMin)
+  const depth = Math.abs(zMax - zMin)
+  return { cx, cz, positionY, width, depth } as const
+})()
+
+/**
+ * Nudges the ground mesh slightly below building soles (world −Y).
+ * Campus crease edges (`Line2`) sit on the footprint at ~y = 0; the opaque
+ * ground plane at the exact same depth causes depth-buffer ties so some base
+ * outlines vanish from steep views. A tiny separation makes outlines win the
+ * depth test without relying on polygon offset (that applies to filled
+ * triangles, not wide lines).
+ */
+export const TERRAIN_GROUND_PLANE_DEPTH_BIAS = 0.01 as const
 
 /** World spacing between grid lines on the terrain plane (matches ground footprint). */
 export const TERRAIN_GROUND_GRID_CELL_SIZE = 5
@@ -98,6 +129,37 @@ export const RIM_LIGHT_DEFAULTS = {
   rimPower: 3,
   uIntensity: 1,
   uPulseSpeed: 2,
+} as const
+
+/**
+ * How high (world units) the selected building floats above its base position.
+ * Tuned in tandem with `BUILDING_FOCUS_ELEVATION_DEG` (CameraRig): the
+ * selected building needs enough vertical separation that a shallow showcase
+ * camera angle can keep neighboring rooftops out of the way.
+ */
+export const SELECTED_BUILDING_LIFT_AMOUNT = 26
+
+/** Radians per second the selected building rotates around its local Y axis. */
+export const SELECTED_BUILDING_SPIN_SPEED = 0.35
+
+/**
+ * `maath/easing` smooth-time (seconds) for the lift-up / lower-down move.
+ *
+ * Lower = snappier. ~0.2s gives a quick, responsive "pop up / drop down"
+ * that still reads as an animation rather than a hard snap.
+ */
+export const SELECTED_BUILDING_LIFT_SMOOTH_TIME = 0.2
+
+/**
+ * Multipliers applied to an *unselected* building's appearance while another
+ * building is selected — pushes the rest of the campus visually into the
+ * background so the focused building reads as the hero.
+ */
+export const MUTED_INTERACTION_MULTIPLIERS = {
+  bodyOpacity: 0.18,
+  emissiveIntensity: 0.2,
+  edgeOpacity: 0.28,
+  gridOpacity: 0.18,
 } as const
 
 /** Canonical interaction states used for mesh highlighting. */
@@ -129,10 +191,22 @@ export interface InteractionStateColor {
   bodyEmissiveIntensity?: number
   /**
    * Optional `material.opacity` for this state (0..1). Higher = more solid.
-   * Falls back to `blueprint.opacity` when undefined. SELECTED uses 1 to
-   * make the active building punch through the campus.
+   * Falls back to `blueprint.opacity` when undefined.
    */
   bodyOpacity?: number
+  /**
+   * Optional `<Edges>` line opacity. When undefined, uses `blueprint.edgeOpacity`.
+   */
+  edgeOpacity?: number
+  /**
+   * Optional rim `uIntensity` cap (hover/selected only). When undefined, uses
+   * the default from BuildingsGroup.
+   */
+  rimIntensity?: number
+  /**
+   * Multiplier on `blueprint.edgeLineWidth` for crease lines in this state.
+   */
+  edgeLineWidthScale?: number
 }
 
 /**
@@ -145,18 +219,26 @@ export const INTERACTION_STATE_COLORS = {
     rgb: 'rgb(64, 217, 255)',
   },
   HOVER: {
-    hex: '#67F0D9',
-    rgb: 'rgb(103, 240, 217)',
-    bodyHex: '#67F0D9',
-    bodyEmissiveIntensity: 1.8,
-    bodyOpacity: 0.75,
+    hex: '#7AE8F0',
+    rgb: 'rgb(122, 232, 240)',
+    bodyHex: '#5ED4E8',
+    edgeHex: '#F0FDFF',
+    bodyEmissiveIntensity: 1.25,
+    bodyOpacity: 0.52,
+    edgeOpacity: 1,
+    rimIntensity: 3.2,
+    edgeLineWidthScale: 1.12,
   },
+  /** Stronger than default blueprint, still translucent so crease edges read. */
   SELECTED: {
-    hex: '#FFC857',
-    rgb: 'rgb(255, 200, 87)',
-    bodyHex: '#FFC857',
+    hex: '#D2F8FF',
+    rgb: 'rgb(210, 248, 255)',
+    bodyHex: '#5AD0EA',
     edgeHex: '#FFFFFF',
-    bodyEmissiveIntensity: 3,
-    bodyOpacity: 1,
+    bodyEmissiveIntensity: 1.42,
+    bodyOpacity: 0.58,
+    edgeOpacity: 1,
+    rimIntensity: 2.95,
+    edgeLineWidthScale: 1.58,
   },
 } as const satisfies Record<InteractionState, InteractionStateColor>

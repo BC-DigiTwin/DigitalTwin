@@ -1,3 +1,5 @@
+@import 'tailwindcss';
+
 html,
 body {
   width: 100%;
@@ -21,4 +23,46 @@ body {
 *::before,
 *::after {
   box-sizing: inherit;
+}
+
+@keyframes digital-twin-panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes digital-twin-accordion-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Exit duration (~0.36s + buffer) is mirrored in SidePanel.tsx as PANEL_EXIT_MS */
+@keyframes digital-twin-panel-out {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(18px);
+  }
+}
+
+.digital-twin-side-panel {
+  animation: digital-twin-panel-in 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.digital-twin-side-panel.digital-twin-side-panel--exit {
+  animation: digital-twin-panel-out 0.36s cubic-bezier(0.55, 0, 1, 0.45) forwards;
 }

@@ -8,6 +8,7 @@ import {
   BuildingsGroup,
   CAMPUS_GLB_PATH,
   collectBuildingMeshNodes,
+  resolveMeshBuildingIdentity,
   stripImportedMaterials,
 } from './BuildingsGroup'
 import { useAssetLoader } from '../../hooks/useAssetLoader'
@@ -22,8 +23,10 @@ vi.mock('@react-three/fiber', () => ({
   useFrame: (fn: () => void) => {
     fn()
   },
-  useThree: (selector?: (s: { clock: { getElapsedTime: () => number } }) => unknown) =>
-    selector ? selector({ clock: { getElapsedTime: () => 0 } }) : { clock: { getElapsedTime: () => 0 } },
+  useThree: (selector?: (s: { clock: { getElapsedTime: () => number }; invalidate: () => void }) => unknown) =>
+    selector
+      ? selector({ clock: { getElapsedTime: () => 0 }, invalidate: vi.fn() })
+      : { clock: { getElapsedTime: () => 0 }, invalidate: vi.fn() },
 }))
 
 vi.mock('../../hooks/useAssetLoader', () => ({
@@ -72,6 +75,46 @@ describe('BuildingsGroup', () => {
 
     expect(nodes).toHaveLength(3)
     expect(nodes.map((n) => n.buildingName)).toEqual(['Building A', 'Building A', 'Building B'])
+  })
+
+  it('canonicalizes Blender duplicate mesh names like building_e_2', () => {
+    const scene = new THREE.Scene()
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial())
+    mesh.name = 'building_e_2'
+    scene.add(mesh)
+
+    const nodes = collectBuildingMeshNodes(scene)
+
+    expect(nodes).toHaveLength(1)
+    expect(nodes[0].meshName).toBe('building_e')
+    expect(nodes[0].buildingName).toBe('building_e')
+  })
+
+  it('uses mesh `building_*` slug when a single GLTF root group shares one UUID (e.g. "Scene")', () => {
+    const scene = new THREE.Scene()
+    const gltfRoot = new THREE.Group()
+    gltfRoot.name = 'Scene'
+    const meshA = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial())
+    meshA.name = 'building_a'
+    const meshB = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial())
+    meshB.name = 'building_b'
+    gltfRoot.add(meshA)
+    gltfRoot.add(meshB)
+    scene.add(gltfRoot)
+
+    const nodes = collectBuildingMeshNodes(scene)
+
+    expect(nodes).toHaveLength(2)
+    expect(nodes.map((n) => n.buildingId)).toEqual(['building_a', 'building_b'])
+    expect(nodes[0].buildingId).not.toBe(nodes[1].buildingId)
+  })
+
+  it('resolveMeshBuildingIdentity prefers mesh slug over shared parent UUID', () => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial())
+    mesh.name = 'building_c'
+    const parent = { id: '02b69f23-0a5b-45e5-8825-55c42b27a061', name: 'Scene' }
+    const out = resolveMeshBuildingIdentity(mesh, parent)
+    expect(out.id).toBe('building_c')
   })
 
   it('strips imported blender materials from traversed meshes', () => {
