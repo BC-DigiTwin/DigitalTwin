@@ -62,7 +62,7 @@ const DEFAULT_INTERACTION_RIM_INTENSITY = 5
 const BUILDING_SOURCE_MESH_UUID_KEY = '__buildingSourceMeshUuid'
 
 /** Public path to the campus greybox GLB (World Origin = scene anchor). */
-export const CAMPUS_GLB_PATH = '/models/campus_greybox.glb'
+export const CAMPUS_GLB_PATH = '/models/campus_greybox_all.glb'
 
 // Preload so Suspense can resolve when BuildingsGroup mounts
 useAssetLoader.preload(CAMPUS_GLB_PATH)

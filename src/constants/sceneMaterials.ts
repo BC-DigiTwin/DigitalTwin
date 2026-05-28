@@ -84,10 +84,10 @@ export const TERRAIN_GROUND_DEFAULTS: TerrainGroundMaterialSettings = {
  * West / East = X, South / North = Z.
  */
 export const TERRAIN_GROUND_PLANE_BOUNDS = {
-  xMin: -108,
-  xMax: 128,
-  zMin: -228,
-  zMax: 78,
+  xMin: -122,
+  xMax: 291,
+  zMin: -623,
+  zMax: 212,
   positionY: 0,
 } as const
 
