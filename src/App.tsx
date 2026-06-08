@@ -8,6 +8,8 @@ import {
   useCameraControl,
 } from './contexts/CameraControlContext'
 import { BuildingsGroup } from './components/scene/BuildingsGroup'
+import { AuxBuildingsGroup } from './components/scene/AuxBuildingsGroup'
+import { RoadsGroup } from './components/scene/RoadsGroup'
 import { TerrainGroup } from './components/scene/TerrainGroup'
 import { StressTestGroup } from './components/scene/StressTestGroup'
 import { InstancedRimExample } from './components/scene/InstancedRimExample'
@@ -550,6 +552,8 @@ export default function App() {
               fallback={<PlaceholderBox size={[80, 12, 80]} />}
             >
               <Suspense fallback={null}>
+                <RoadsGroup />
+                <AuxBuildingsGroup />
                 <BuildingsGroup />
               </Suspense>
             </AssetErrorBoundary>

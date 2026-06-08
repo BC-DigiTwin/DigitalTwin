@@ -82,18 +82,19 @@ export const TERRAIN_GROUND_DEFAULTS: TerrainGroundMaterialSettings = {
 /**
  * Fixed world-space rectangle for the campus ground plane (matched to greybox footprint).
  * West / East = X, South / North = Z.
+ *
+ * Tuned to campus model: width 680, depth 866, cell 5, offset (+95 X, −19 Z) from prior anchor.
  */
 export const TERRAIN_GROUND_PLANE_BOUNDS = {
-  xMin: -122,
-  xMax: 291,
-  zMin: -623,
-  zMax: 212,
+  xMin: -160.5,
+  xMax: 519.5,
+  zMin: -657.5,
+  zMax: 208.5,
   positionY: 0,
 } as const
 
 /**
- * Campus center and default ground rectangle (matches `TERRAIN_GROUND_PLANE_BOUNDS`).
- * Expandable ground in the scene stays centered here so buildings stay on the same spot.
+ * Campus center and ground rectangle (matches `TERRAIN_GROUND_PLANE_BOUNDS`).
  */
 export const TERRAIN_GROUND_ANCHOR = (() => {
   const { xMin, xMax, zMin, zMax, positionY } = TERRAIN_GROUND_PLANE_BOUNDS
