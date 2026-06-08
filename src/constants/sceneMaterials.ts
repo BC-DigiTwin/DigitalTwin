@@ -79,6 +79,30 @@ export const TERRAIN_GROUND_DEFAULTS: TerrainGroundMaterialSettings = {
   metalness: 0,
 }
 
+/** Material tuning for the campus road network (`RoadsGroup`). */
+export interface RoadMaterialSettings {
+  color: string
+  opacity: number
+  doubleSide: boolean
+  depthWrite: boolean
+  /** Draw order vs terrain grid (-20) and buildings (0). Lower = drawn earlier (behind). */
+  renderOrder: number
+}
+
+export const ROADS_MATERIAL_DEFAULTS: RoadMaterialSettings = {
+  color: '#3d6b85',
+  opacity: 0.92,
+  doubleSide: true,
+  depthWrite: true,
+  renderOrder: -10,
+}
+
+/** `TerrainGroup` grid `lineSegments` draw order — roads must render after this. */
+export const TERRAIN_GROUND_GRID_RENDER_ORDER = -20 as const
+
+/** Minimum road `renderOrder` so filled surfaces always draw after the ground grid. */
+export const ROADS_MIN_RENDER_ORDER = TERRAIN_GROUND_GRID_RENDER_ORDER + 1
+
 /**
  * Fixed world-space rectangle for the campus ground plane (matched to greybox footprint).
  * West / East = X, South / North = Z.
@@ -114,6 +138,19 @@ export const TERRAIN_GROUND_ANCHOR = (() => {
  * triangles, not wide lines).
  */
 export const TERRAIN_GROUND_PLANE_DEPTH_BIAS = 0.01 as const
+
+/**
+ * Grid line height in world Y (matches `TerrainGroup`:
+ * `positionY - TERRAIN_GROUND_PLANE_DEPTH_BIAS + 0.001`).
+ */
+export const TERRAIN_GROUND_GRID_Y =
+  TERRAIN_GROUND_PLANE_BOUNDS.positionY - TERRAIN_GROUND_PLANE_DEPTH_BIAS + 0.001
+
+/**
+ * Extra world-Y lift for road surfaces so they sit above the grid in the depth
+ * buffer (avoids grid lines punching through on shallow camera angles).
+ */
+export const ROADS_ABOVE_GRID_EPS = 0.015
 
 /** World spacing between grid lines on the terrain plane (matches ground footprint). */
 export const TERRAIN_GROUND_GRID_CELL_SIZE = 5

@@ -277,6 +277,64 @@ function TerrainGroundControls() {
   return null
 }
 
+/** Leva → Zustand: campus road network color, opacity, and draw settings. */
+function RoadsControls() {
+  const setRoadsMaterial = useStore((s) => s.setRoadsMaterial)
+  const setRoadsVisible = useStore((s) => s.setRoadsVisible)
+  const initialRef = useRef(useStore.getState().roadsMaterial)
+  const initialVisibleRef = useRef(useStore.getState().roadsVisible)
+  const d = initialRef.current
+
+  const {
+    showRoads,
+    roadColor,
+    opacity,
+    doubleSide,
+    depthWrite,
+    renderOrder,
+  } = useControls(
+    'Roads',
+    {
+      showRoads: { value: initialVisibleRef.current, label: 'Show roads' },
+      roadColor: { value: d.color, label: 'Color' },
+      opacity: { value: d.opacity, min: 0, max: 1, step: 0.02, label: 'Opacity' },
+      doubleSide: { value: d.doubleSide, label: 'Double side' },
+      depthWrite: { value: d.depthWrite, label: 'Depth write' },
+      renderOrder: {
+        value: d.renderOrder,
+        min: -50,
+        max: 10,
+        step: 1,
+        label: 'Render order',
+      },
+    },
+    { collapsed: true },
+  )
+
+  useEffect(() => {
+    setRoadsVisible(showRoads)
+  }, [showRoads, setRoadsVisible])
+
+  useEffect(() => {
+    setRoadsMaterial({
+      color: roadColor,
+      opacity,
+      doubleSide,
+      depthWrite,
+      renderOrder,
+    })
+  }, [
+    roadColor,
+    opacity,
+    doubleSide,
+    depthWrite,
+    renderOrder,
+    setRoadsMaterial,
+  ])
+
+  return null
+}
+
 /**
  * Leva → Zustand: showcase-selection toggles.
  *
@@ -539,6 +597,7 @@ export default function App() {
             <SelectionBehaviorControls />
             <SceneViewportControls />
             <TerrainGroundControls />
+            <RoadsControls />
 
             {/* Non-suspending layers render immediately */}
             <TerrainGroup />

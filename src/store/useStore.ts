@@ -5,6 +5,8 @@ import {
     BLUEPRINT_BUILDING_DEFAULTS,
     type TerrainGroundMaterialSettings,
     TERRAIN_GROUND_DEFAULTS,
+    type RoadMaterialSettings,
+    ROADS_MATERIAL_DEFAULTS,
     TERRAIN_GROUND_GRID_COLOR,
     SCENE_BACKGROUND_DEFAULT,
     SELECTION_SOLID_BODY_COLOR_DEFAULT,
@@ -50,6 +52,9 @@ export interface AppState {
     layers: LayerVisibility
     blueprintBuildingMaterial: BlueprintBuildingMaterialSettings
     terrainGroundMaterial: TerrainGroundMaterialSettings
+    roadsMaterial: RoadMaterialSettings
+    /** Campus road network visibility (independent of layer toggles). */
+    roadsVisible: boolean
     /** Solid grass/ground mesh (can be off while grid stays visible). */
     terrainShowGroundPlane: boolean
     /** Grid lines on the terrain footprint (independent of ground plane). */
@@ -98,6 +103,8 @@ export interface AppActions {
     setLayerVisible: (layer: LayerName, visible: boolean) => void
     setBlueprintBuildingMaterial: (partial: Partial<BlueprintBuildingMaterialSettings>) => void
     setTerrainGroundMaterial: (partial: Partial<TerrainGroundMaterialSettings>) => void
+    setRoadsMaterial: (partial: Partial<RoadMaterialSettings>) => void
+    setRoadsVisible: (visible: boolean) => void
     setTerrainShowGroundPlane: (show: boolean) => void
     setTerrainShowGrid: (show: boolean) => void
     setTerrainGridLineColor: (color: string) => void
@@ -137,6 +144,8 @@ export const useStore = create<Store>()(
             layers: { ...DEFAULT_LAYER_VISIBILITY },
             blueprintBuildingMaterial: { ...BLUEPRINT_BUILDING_DEFAULTS },
             terrainGroundMaterial: { ...TERRAIN_GROUND_DEFAULTS },
+            roadsMaterial: { ...ROADS_MATERIAL_DEFAULTS },
+            roadsVisible: true,
             terrainShowGroundPlane: false,
             terrainShowGrid: true,
             terrainGridLineColor: TERRAIN_GROUND_GRID_COLOR,
@@ -207,6 +216,21 @@ export const useStore = create<Store>()(
                     false,
                     'setTerrainGroundMaterial',
                 ),
+
+            setRoadsMaterial: (partial) =>
+                set(
+                    (s) => ({
+                        roadsMaterial: {
+                            ...s.roadsMaterial,
+                            ...partial,
+                        },
+                    }),
+                    false,
+                    'setRoadsMaterial',
+                ),
+
+            setRoadsVisible: (visible) =>
+                set({ roadsVisible: visible }, false, 'setRoadsVisible'),
 
             setTerrainShowGroundPlane: (show) =>
                 set({ terrainShowGroundPlane: show }, false, 'setTerrainShowGroundPlane'),
