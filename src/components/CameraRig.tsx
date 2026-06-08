@@ -151,6 +151,15 @@ const BUILDING_FOCUS_DURATION_MULT = 0.45
 const BUILDING_FOCUS_MAP_ZOOM_FRAC = 0.82
 
 /**
+ * Perspective clip planes for the campus footprint (~900 m diagonal).
+ * A tight `far` (e.g. 1000) cuts geometry when orbiting/zooming out and reads
+ * as a diagonal “black wall”. Logarithmic depth (Canvas) keeps precision with a
+ * wide near/far ratio.
+ */
+const PERSP_CLIP_NEAR = 0.01
+const PERSP_CLIP_FAR = 10_000
+
+/**
  * Fills `outBox` with the union of world bounds for meshes tagged
  * `userData.buildingId === id`. Returns false when nothing matches.
  */
@@ -647,8 +656,8 @@ export function CameraRig({
       <perspectiveCamera
         ref={perspCamRef}
         fov={orbitFov}
-        near={0.1}
-        far={1000}
+        near={PERSP_CLIP_NEAR}
+        far={PERSP_CLIP_FAR}
       />
       <orthographicCamera
         ref={orthoCamRef}

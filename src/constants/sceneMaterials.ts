@@ -59,6 +59,47 @@ export const BLUEPRINT_BUILDING_DEFAULTS: BlueprintBuildingMaterialSettings = {
   buildingGridCellSize: 5.5,
 }
 
+/** User-tunable look for background auxiliary buildings (non-interactive massing). */
+export interface AuxBuildingMaterialSettings {
+  /** Face transparency (0 = invisible, 1 = solid). */
+  opacity: number
+  /** Hero HSL saturation multiplier for aux fill faces. */
+  fillSaturationMult: number
+  /** Hero HSL lightness multiplier for aux fill faces. */
+  fillLightnessMult: number
+  /** Minimum HSL lightness when deriving fill/edge tints from the hero color. */
+  minLightness: number
+  showEdges: boolean
+  /** When true, crease color is derived from hero hue + edge saturation/lightness multipliers. */
+  deriveEdgeColorFromHero: boolean
+  /** Manual crease color when `deriveEdgeColorFromHero` is false. */
+  edgeColor: string
+  /** Hero HSL saturation multiplier for derived crease color. */
+  edgeSaturationMult: number
+  /** Hero HSL lightness multiplier for derived crease color. */
+  edgeLightnessMult: number
+  edgeOpacity: number
+  /** Screen-space crease thickness in pixels (`<Edges linewidth={...}>`). */
+  edgeLineWidth: number
+  /** Degrees between face normals below which two faces are smoothed together. */
+  edgeThreshold: number
+}
+
+export const AUX_BUILDING_MATERIAL_DEFAULTS: AuxBuildingMaterialSettings = {
+  opacity: 0.42,
+  fillSaturationMult: 0.34,
+  fillLightnessMult: 0.62,
+  minLightness: 0.11,
+  showEdges: true,
+  deriveEdgeColorFromHero: true,
+  edgeColor: '#2a7a8a',
+  edgeSaturationMult: 0.48,
+  edgeLightnessMult: 0.34,
+  edgeOpacity: 0.88,
+  edgeLineWidth: 0.75,
+  edgeThreshold: 18,
+}
+
 /** Default solid fill when “Solid selected building” is on (matches default surface grid lines). */
 export const SELECTION_SOLID_BODY_COLOR_DEFAULT =
   BLUEPRINT_BUILDING_DEFAULTS.buildingGridColor
@@ -79,21 +120,46 @@ export const TERRAIN_GROUND_DEFAULTS: TerrainGroundMaterialSettings = {
   metalness: 0,
 }
 
+/** Material tuning for the campus road network (`RoadsGroup`). */
+export interface RoadMaterialSettings {
+  color: string
+  opacity: number
+  doubleSide: boolean
+  depthWrite: boolean
+  /** Draw order vs terrain grid (-20) and buildings (0). Lower = drawn earlier (behind). */
+  renderOrder: number
+}
+
+export const ROADS_MATERIAL_DEFAULTS: RoadMaterialSettings = {
+  color: '#b1f2ff',
+  opacity: 0.24,
+  doubleSide: true,
+  depthWrite: true,
+  renderOrder: -10,
+}
+
+/** `TerrainGroup` grid `lineSegments` draw order — roads must render after this. */
+export const TERRAIN_GROUND_GRID_RENDER_ORDER = -20 as const
+
+/** Minimum road `renderOrder` so filled surfaces always draw after the ground grid. */
+export const ROADS_MIN_RENDER_ORDER = TERRAIN_GROUND_GRID_RENDER_ORDER + 1
+
 /**
  * Fixed world-space rectangle for the campus ground plane (matched to greybox footprint).
  * West / East = X, South / North = Z.
+ *
+ * Tuned to campus model: width 680, depth 866, cell 5, offset (+95 X, −19 Z) from prior anchor.
  */
 export const TERRAIN_GROUND_PLANE_BOUNDS = {
-  xMin: -122,
-  xMax: 291,
-  zMin: -623,
-  zMax: 212,
+  xMin: -160.5,
+  xMax: 519.5,
+  zMin: -657.5,
+  zMax: 208.5,
   positionY: 0,
 } as const
 
 /**
- * Campus center and default ground rectangle (matches `TERRAIN_GROUND_PLANE_BOUNDS`).
- * Expandable ground in the scene stays centered here so buildings stay on the same spot.
+ * Campus center and ground rectangle (matches `TERRAIN_GROUND_PLANE_BOUNDS`).
  */
 export const TERRAIN_GROUND_ANCHOR = (() => {
   const { xMin, xMax, zMin, zMax, positionY } = TERRAIN_GROUND_PLANE_BOUNDS
@@ -113,6 +179,19 @@ export const TERRAIN_GROUND_ANCHOR = (() => {
  * triangles, not wide lines).
  */
 export const TERRAIN_GROUND_PLANE_DEPTH_BIAS = 0.01 as const
+
+/**
+ * Grid line height in world Y (matches `TerrainGroup`:
+ * `positionY - TERRAIN_GROUND_PLANE_DEPTH_BIAS + 0.001`).
+ */
+export const TERRAIN_GROUND_GRID_Y =
+  TERRAIN_GROUND_PLANE_BOUNDS.positionY - TERRAIN_GROUND_PLANE_DEPTH_BIAS + 0.001
+
+/**
+ * Extra world-Y lift for road surfaces so they sit above the grid in the depth
+ * buffer (avoids grid lines punching through on shallow camera angles).
+ */
+export const ROADS_ABOVE_GRID_EPS = 0.015
 
 /** World spacing between grid lines on the terrain plane (matches ground footprint). */
 export const TERRAIN_GROUND_GRID_CELL_SIZE = 5

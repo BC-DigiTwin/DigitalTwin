@@ -3,8 +3,12 @@ import { devtools } from 'zustand/middleware'
 import {
     type BlueprintBuildingMaterialSettings,
     BLUEPRINT_BUILDING_DEFAULTS,
+    type AuxBuildingMaterialSettings,
+    AUX_BUILDING_MATERIAL_DEFAULTS,
     type TerrainGroundMaterialSettings,
     TERRAIN_GROUND_DEFAULTS,
+    type RoadMaterialSettings,
+    ROADS_MATERIAL_DEFAULTS,
     TERRAIN_GROUND_GRID_COLOR,
     SCENE_BACKGROUND_DEFAULT,
     SELECTION_SOLID_BODY_COLOR_DEFAULT,
@@ -49,7 +53,11 @@ export interface AppState {
     selectedEntity: string | null
     layers: LayerVisibility
     blueprintBuildingMaterial: BlueprintBuildingMaterialSettings
+    auxBuildingMaterial: AuxBuildingMaterialSettings
     terrainGroundMaterial: TerrainGroundMaterialSettings
+    roadsMaterial: RoadMaterialSettings
+    /** Campus road network visibility (independent of layer toggles). */
+    roadsVisible: boolean
     /** Solid grass/ground mesh (can be off while grid stays visible). */
     terrainShowGroundPlane: boolean
     /** Grid lines on the terrain footprint (independent of ground plane). */
@@ -97,7 +105,10 @@ export interface AppActions {
     toggleLayer: (layer: LayerName) => void
     setLayerVisible: (layer: LayerName, visible: boolean) => void
     setBlueprintBuildingMaterial: (partial: Partial<BlueprintBuildingMaterialSettings>) => void
+    setAuxBuildingMaterial: (partial: Partial<AuxBuildingMaterialSettings>) => void
     setTerrainGroundMaterial: (partial: Partial<TerrainGroundMaterialSettings>) => void
+    setRoadsMaterial: (partial: Partial<RoadMaterialSettings>) => void
+    setRoadsVisible: (visible: boolean) => void
     setTerrainShowGroundPlane: (show: boolean) => void
     setTerrainShowGrid: (show: boolean) => void
     setTerrainGridLineColor: (color: string) => void
@@ -136,7 +147,10 @@ export const useStore = create<Store>()(
             selectedEntity: null,
             layers: { ...DEFAULT_LAYER_VISIBILITY },
             blueprintBuildingMaterial: { ...BLUEPRINT_BUILDING_DEFAULTS },
+            auxBuildingMaterial: { ...AUX_BUILDING_MATERIAL_DEFAULTS },
             terrainGroundMaterial: { ...TERRAIN_GROUND_DEFAULTS },
+            roadsMaterial: { ...ROADS_MATERIAL_DEFAULTS },
+            roadsVisible: true,
             terrainShowGroundPlane: false,
             terrainShowGrid: true,
             terrainGridLineColor: TERRAIN_GROUND_GRID_COLOR,
@@ -196,6 +210,18 @@ export const useStore = create<Store>()(
                     'setBlueprintBuildingMaterial',
                 ),
 
+            setAuxBuildingMaterial: (partial) =>
+                set(
+                    (s) => ({
+                        auxBuildingMaterial: {
+                            ...s.auxBuildingMaterial,
+                            ...partial,
+                        },
+                    }),
+                    false,
+                    'setAuxBuildingMaterial',
+                ),
+
             setTerrainGroundMaterial: (partial) =>
                 set(
                     (s) => ({
@@ -207,6 +233,21 @@ export const useStore = create<Store>()(
                     false,
                     'setTerrainGroundMaterial',
                 ),
+
+            setRoadsMaterial: (partial) =>
+                set(
+                    (s) => ({
+                        roadsMaterial: {
+                            ...s.roadsMaterial,
+                            ...partial,
+                        },
+                    }),
+                    false,
+                    'setRoadsMaterial',
+                ),
+
+            setRoadsVisible: (visible) =>
+                set({ roadsVisible: visible }, false, 'setRoadsVisible'),
 
             setTerrainShowGroundPlane: (show) =>
                 set({ terrainShowGroundPlane: show }, false, 'setTerrainShowGroundPlane'),
