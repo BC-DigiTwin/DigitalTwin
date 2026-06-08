@@ -3,6 +3,8 @@ import { devtools } from 'zustand/middleware'
 import {
     type BlueprintBuildingMaterialSettings,
     BLUEPRINT_BUILDING_DEFAULTS,
+    type AuxBuildingMaterialSettings,
+    AUX_BUILDING_MATERIAL_DEFAULTS,
     type TerrainGroundMaterialSettings,
     TERRAIN_GROUND_DEFAULTS,
     type RoadMaterialSettings,
@@ -51,6 +53,7 @@ export interface AppState {
     selectedEntity: string | null
     layers: LayerVisibility
     blueprintBuildingMaterial: BlueprintBuildingMaterialSettings
+    auxBuildingMaterial: AuxBuildingMaterialSettings
     terrainGroundMaterial: TerrainGroundMaterialSettings
     roadsMaterial: RoadMaterialSettings
     /** Campus road network visibility (independent of layer toggles). */
@@ -102,6 +105,7 @@ export interface AppActions {
     toggleLayer: (layer: LayerName) => void
     setLayerVisible: (layer: LayerName, visible: boolean) => void
     setBlueprintBuildingMaterial: (partial: Partial<BlueprintBuildingMaterialSettings>) => void
+    setAuxBuildingMaterial: (partial: Partial<AuxBuildingMaterialSettings>) => void
     setTerrainGroundMaterial: (partial: Partial<TerrainGroundMaterialSettings>) => void
     setRoadsMaterial: (partial: Partial<RoadMaterialSettings>) => void
     setRoadsVisible: (visible: boolean) => void
@@ -143,6 +147,7 @@ export const useStore = create<Store>()(
             selectedEntity: null,
             layers: { ...DEFAULT_LAYER_VISIBILITY },
             blueprintBuildingMaterial: { ...BLUEPRINT_BUILDING_DEFAULTS },
+            auxBuildingMaterial: { ...AUX_BUILDING_MATERIAL_DEFAULTS },
             terrainGroundMaterial: { ...TERRAIN_GROUND_DEFAULTS },
             roadsMaterial: { ...ROADS_MATERIAL_DEFAULTS },
             roadsVisible: true,
@@ -203,6 +208,18 @@ export const useStore = create<Store>()(
                     }),
                     false,
                     'setBlueprintBuildingMaterial',
+                ),
+
+            setAuxBuildingMaterial: (partial) =>
+                set(
+                    (s) => ({
+                        auxBuildingMaterial: {
+                            ...s.auxBuildingMaterial,
+                            ...partial,
+                        },
+                    }),
+                    false,
+                    'setAuxBuildingMaterial',
                 ),
 
             setTerrainGroundMaterial: (partial) =>

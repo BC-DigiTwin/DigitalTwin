@@ -174,7 +174,7 @@ function BlueprintBuildingControls() {
         label: 'Surface grid cell size',
       },
     },
-    { collapsed: false },
+    { collapsed: true },
   )
 
   useEffect(() => {
@@ -208,6 +208,141 @@ function BlueprintBuildingControls() {
     buildingGridOpacity,
     buildingGridCellSize,
     setBlueprintBuildingMaterial,
+  ])
+
+  return null
+}
+
+/** Leva → Zustand: background auxiliary building fill and crease styling. */
+function AuxBuildingControls() {
+  const setAuxBuildingMaterial = useStore((s) => s.setAuxBuildingMaterial)
+  const initialRef = useRef(useStore.getState().auxBuildingMaterial)
+  const d = initialRef.current
+
+  const {
+    opacity,
+    fillSaturationMult,
+    fillLightnessMult,
+    minLightness,
+    showEdges,
+    deriveEdgeColorFromHero,
+    edgeColor,
+    edgeSaturationMult,
+    edgeLightnessMult,
+    edgeOpacity,
+    edgeLineWidth,
+    edgeThreshold,
+  } = useControls(
+    'Aux Buildings',
+    {
+      opacity: {
+        value: d.opacity,
+        min: 0,
+        max: 1,
+        step: 0.02,
+        label: 'Face opacity',
+      },
+      fillSaturationMult: {
+        value: d.fillSaturationMult,
+        min: 0,
+        max: 1,
+        step: 0.02,
+        label: 'Fill saturation (× hero)',
+      },
+      fillLightnessMult: {
+        value: d.fillLightnessMult,
+        min: 0,
+        max: 1,
+        step: 0.02,
+        label: 'Fill lightness (× hero)',
+      },
+      minLightness: {
+        value: d.minLightness,
+        min: 0,
+        max: 0.5,
+        step: 0.01,
+        label: 'Min lightness floor',
+      },
+      showEdges: { value: d.showEdges, label: 'Show crease edges' },
+      deriveEdgeColorFromHero: {
+        value: d.deriveEdgeColorFromHero,
+        label: 'Derive crease color from hero',
+      },
+      edgeColor: {
+        value: d.edgeColor,
+        label: 'Crease color (manual)',
+        render: (get) => !get('Aux Buildings.deriveEdgeColorFromHero'),
+      },
+      edgeSaturationMult: {
+        value: d.edgeSaturationMult,
+        min: 0,
+        max: 1,
+        step: 0.02,
+        label: 'Crease saturation (× hero)',
+        render: (get) => !!get('Aux Buildings.deriveEdgeColorFromHero'),
+      },
+      edgeLightnessMult: {
+        value: d.edgeLightnessMult,
+        min: 0,
+        max: 1,
+        step: 0.02,
+        label: 'Crease lightness (× hero)',
+        render: (get) => !!get('Aux Buildings.deriveEdgeColorFromHero'),
+      },
+      edgeOpacity: {
+        value: d.edgeOpacity,
+        min: 0,
+        max: 1,
+        step: 0.02,
+        label: 'Crease opacity',
+      },
+      edgeLineWidth: {
+        value: d.edgeLineWidth,
+        min: 0.5,
+        max: 6,
+        step: 0.25,
+        label: 'Crease thickness (px)',
+      },
+      edgeThreshold: {
+        value: d.edgeThreshold,
+        min: 15,
+        max: 20,
+        step: 1,
+        label: 'Crease threshold angle (°)',
+      },
+    },
+    { collapsed: true },
+  )
+
+  useEffect(() => {
+    setAuxBuildingMaterial({
+      opacity,
+      fillSaturationMult,
+      fillLightnessMult,
+      minLightness,
+      showEdges,
+      deriveEdgeColorFromHero,
+      edgeColor,
+      edgeSaturationMult,
+      edgeLightnessMult,
+      edgeOpacity,
+      edgeLineWidth,
+      edgeThreshold,
+    })
+  }, [
+    opacity,
+    fillSaturationMult,
+    fillLightnessMult,
+    minLightness,
+    showEdges,
+    deriveEdgeColorFromHero,
+    edgeColor,
+    edgeSaturationMult,
+    edgeLightnessMult,
+    edgeOpacity,
+    edgeLineWidth,
+    edgeThreshold,
+    setAuxBuildingMaterial,
   ])
 
   return null
@@ -402,7 +537,7 @@ function SelectionBehaviorControls() {
             label: 'Solid selected glow',
           },
         },
-        { collapsed: false },
+        { collapsed: true },
       ),
     },
   )
@@ -592,6 +727,7 @@ export default function App() {
             <PerfOverlay />
 
             <BlueprintBuildingControls />
+            <AuxBuildingControls />
             <CameraRigWithControls />
             <LayerToggles />
             <SelectionBehaviorControls />

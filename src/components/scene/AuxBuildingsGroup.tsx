@@ -1,47 +1,70 @@
 import { useMemo, useEffect, useLayoutEffect, useRef } from 'react'
 import type { Group } from 'three'
 import * as THREE from 'three'
+import { Edges } from '@react-three/drei'
 import { useAssetLoader } from '../../hooks/useAssetLoader'
 import { useStore } from '../../store/useStore'
 import { gpsToWorldPosition } from '../../utils/gps'
 import { WORLD_ORIGIN } from '../../constants/coordinates'
 import { RENDER_LAYERS } from '../../constants/renderLayers'
+import type { AuxBuildingMaterialSettings } from '../../constants/sceneMaterials'
 
 /** Public path to the auxiliary / background buildings GLB (same World Origin anchor). */
 export const AUX_BUILDINGS_GLB_PATH = '/models/aux_buildings.glb'
-
-/** Overall face transparency; lower = more ghost-like. */
-const AUX_OPACITY = 0.4
-
-/**
- * Tweakable styling — aux faces track the hero building color from Leva/Zustand,
- * then pull saturation down and darken so they read as background context.
- */
-const AUX_SATURATION_MULT = 0.42
-const AUX_LIGHTNESS_MULT = 0.62
-/** Floor so very dark hero picks still show aux massing. */
-const AUX_MIN_LIGHTNESS = 0.08
 
 useAssetLoader.preload(AUX_BUILDINGS_GLB_PATH)
 
 const _heroColor = new THREE.Color()
 const _scratchHsl = { h: 0, s: 0, l: 0 }
 
+type AuxColorDerivation = Pick<
+  AuxBuildingMaterialSettings,
+  'fillSaturationMult' | 'fillLightnessMult' | 'minLightness'
+>
+
+type AuxEdgeColorDerivation = Pick<
+  AuxBuildingMaterialSettings,
+  'edgeSaturationMult' | 'edgeLightnessMult' | 'minLightness'
+>
+
 /**
  * Derives a muted aux fill hex color from the live hero building tint.
  * Same hue family as the main campus; lower saturation and darker lightness.
  */
-export function deriveAuxBuildingColor(heroHex: string): string {
+export function deriveAuxBuildingColor(
+  heroHex: string,
+  settings: AuxColorDerivation,
+): string {
   _heroColor.set(heroHex)
   _heroColor.getHSL(_scratchHsl)
 
   const fill = new THREE.Color().setHSL(
     _scratchHsl.h,
-    _scratchHsl.s * AUX_SATURATION_MULT,
-    Math.max(AUX_MIN_LIGHTNESS, _scratchHsl.l * AUX_LIGHTNESS_MULT),
+    _scratchHsl.s * settings.fillSaturationMult,
+    Math.max(settings.minLightness, _scratchHsl.l * settings.fillLightnessMult),
   )
 
   return `#${fill.getHexString()}`
+}
+
+/**
+ * Crease tint derived from the same hero hue as aux fills, but pulled up in
+ * saturation/lightness so outlines read without matching interactive linework.
+ */
+export function deriveAuxBuildingEdgeColor(
+  heroHex: string,
+  settings: AuxEdgeColorDerivation,
+): string {
+  _heroColor.set(heroHex)
+  _heroColor.getHSL(_scratchHsl)
+
+  const edge = new THREE.Color().setHSL(
+    _scratchHsl.h,
+    _scratchHsl.s * settings.edgeSaturationMult,
+    Math.max(settings.minLightness, _scratchHsl.l * settings.edgeLightnessMult),
+  )
+
+  return `#${edge.getHexString()}`
 }
 
 /**
@@ -50,7 +73,7 @@ export function deriveAuxBuildingColor(heroHex: string): string {
  */
 const AUX_STRIPPED_MATERIAL = new THREE.MeshBasicMaterial({
   transparent: true,
-  opacity: AUX_OPACITY,
+  opacity: 0.4,
   depthWrite: false,
 })
 
@@ -97,7 +120,17 @@ export function stripAuxImportedMaterials(root: THREE.Object3D): number {
   return strippedCount
 }
 
-function AuxMeshNode({ mesh, fillColor }: { mesh: THREE.Mesh; fillColor: string }) {
+interface AuxMeshStyle {
+  fillColor: string
+  edgeColor: string
+  opacity: number
+  edgeLineWidth: number
+  edgeOpacity: number
+  edgeThreshold: number
+  showEdges: boolean
+}
+
+function AuxMeshNode({ mesh, style }: { mesh: THREE.Mesh; style: AuxMeshStyle }) {
   const meshRef = useRef<THREE.Mesh>(null)
 
   useLayoutEffect(() => {
@@ -122,19 +155,35 @@ function AuxMeshNode({ mesh, fillColor }: { mesh: THREE.Mesh; fillColor: string 
       renderOrder={-5}
     >
       <meshBasicMaterial
-        color={fillColor}
+        color={style.fillColor}
         transparent
-        opacity={AUX_OPACITY}
+        opacity={style.opacity}
         depthTest
         depthWrite={false}
       />
+      {style.showEdges ? (
+        <Edges
+          key={`${mesh.geometry.uuid}-${style.edgeThreshold}`}
+          threshold={style.edgeThreshold}
+          color={style.edgeColor}
+          transparent
+          opacity={style.edgeOpacity}
+          linewidth={style.edgeLineWidth}
+          depthTest
+          depthWrite={false}
+          polygonOffset
+          polygonOffsetFactor={-1}
+          polygonOffsetUnits={-1}
+          renderOrder={-4}
+        />
+      ) : null}
     </mesh>
   )
 }
 
-function AuxSceneNode({ node, fillColor }: { node: THREE.Object3D; fillColor: string }) {
+function AuxSceneNode({ node, style }: { node: THREE.Object3D; style: AuxMeshStyle }) {
   if ((node as THREE.Mesh).isMesh) {
-    return <AuxMeshNode key={node.uuid} mesh={node as THREE.Mesh} fillColor={fillColor} />
+    return <AuxMeshNode key={node.uuid} mesh={node as THREE.Mesh} style={style} />
   }
 
   const obj = node as THREE.Object3D
@@ -146,7 +195,7 @@ function AuxSceneNode({ node, fillColor }: { node: THREE.Object3D; fillColor: st
       scale={obj.scale}
     >
       {obj.children.map((child) => (
-        <AuxSceneNode key={child.uuid} node={child} fillColor={fillColor} />
+        <AuxSceneNode key={child.uuid} node={child} style={style} />
       ))}
     </group>
   )
@@ -159,10 +208,26 @@ function AuxSceneNode({ node, fillColor }: { node: THREE.Object3D; fillColor: st
 export function AuxBuildingsGroup() {
   const gltf = useAssetLoader(AUX_BUILDINGS_GLB_PATH)
   const heroColor = useStore((s) => s.blueprintBuildingMaterial.color)
+  const aux = useStore((s) => s.auxBuildingMaterial)
   const groupRef = useRef<Group>(null)
   const position = gpsToWorldPosition(WORLD_ORIGIN.lat, WORLD_ORIGIN.lon)
 
-  const fillColor = useMemo(() => deriveAuxBuildingColor(heroColor), [heroColor])
+  const meshStyle = useMemo((): AuxMeshStyle => {
+    const fillColor = deriveAuxBuildingColor(heroColor, aux)
+    const edgeColor = aux.deriveEdgeColorFromHero
+      ? deriveAuxBuildingEdgeColor(heroColor, aux)
+      : aux.edgeColor
+
+    return {
+      fillColor,
+      edgeColor,
+      opacity: aux.opacity,
+      edgeLineWidth: aux.edgeLineWidth,
+      edgeOpacity: aux.edgeOpacity,
+      edgeThreshold: aux.edgeThreshold,
+      showEdges: aux.showEdges,
+    }
+  }, [heroColor, aux])
 
   const scene = useMemo(() => {
     stripAuxImportedMaterials(gltf.scene)
@@ -170,10 +235,10 @@ export function AuxBuildingsGroup() {
   }, [gltf.scene])
 
   useEffect(() => {
-    AUX_STRIPPED_MATERIAL.color.set(fillColor)
-    AUX_STRIPPED_MATERIAL.opacity = AUX_OPACITY
-    AUX_STRIPPED_MATERIAL.transparent = AUX_OPACITY < 1
-  }, [fillColor])
+    AUX_STRIPPED_MATERIAL.color.set(meshStyle.fillColor)
+    AUX_STRIPPED_MATERIAL.opacity = meshStyle.opacity
+    AUX_STRIPPED_MATERIAL.transparent = meshStyle.opacity < 1
+  }, [meshStyle.fillColor, meshStyle.opacity])
 
   useLayoutEffect(() => {
     const root = groupRef.current
@@ -197,7 +262,7 @@ export function AuxBuildingsGroup() {
   return (
     <group ref={groupRef} name="AuxBuildingsGroup" position={position}>
       {scene.children.map((child) => (
-        <AuxSceneNode key={child.uuid} node={child} fillColor={fillColor} />
+        <AuxSceneNode key={child.uuid} node={child} style={meshStyle} />
       ))}
     </group>
   )
