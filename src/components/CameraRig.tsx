@@ -1,4 +1,4 @@
-import { useRef, useLayoutEffect, useEffect, useMemo } from 'react'
+import { useRef, useLayoutEffect, useEffect, useMemo, type MutableRefObject } from 'react'
 import { useThree, useFrame } from '@react-three/fiber'
 import { OrbitControls as ThreeOrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import * as THREE from 'three'
@@ -246,6 +246,120 @@ function killBuildingFocusTweens(
   gsap.killTweensOf(orthoCam)
 }
 
+/** Camera pose saved before the first building in a selection session. */
+interface PreSelectionCameraSnapshot {
+  target: { x: number; y: number; z: number }
+  perspPosition: { x: number; y: number; z: number }
+  orthoPosition: { x: number; y: number; z: number }
+  orthoZoom: number
+}
+
+function capturePreSelectionCamera(
+  controls: ThreeOrbitControls,
+  perspCam: THREE.PerspectiveCamera,
+  orthoCam: THREE.OrthographicCamera,
+): PreSelectionCameraSnapshot {
+  const t = controls.target
+  const pp = perspCam.position
+  const op = orthoCam.position
+  return {
+    target: { x: t.x, y: t.y, z: t.z },
+    perspPosition: { x: pp.x, y: pp.y, z: pp.z },
+    orthoPosition: { x: op.x, y: op.y, z: op.z },
+    orthoZoom: orthoCam.zoom,
+  }
+}
+
+function restorePreSelectionCamera(
+  controls: ThreeOrbitControls,
+  perspCam: THREE.PerspectiveCamera,
+  orthoCam: THREE.OrthographicCamera,
+  snapshot: PreSelectionCameraSnapshot,
+  duration: number,
+  azimuthRef: MutableRefObject<number>,
+  onComplete: () => void,
+): void {
+  controls.enabled = false
+  const orthoActive = controls.object === orthoCam
+  const d = duration * BUILDING_FOCUS_DURATION_MULT
+
+  if (!orthoActive) {
+    const cam = perspCam
+    gsap
+      .timeline({
+        onUpdate() {
+          cam.lookAt(controls.target)
+          controls.update()
+        },
+        onComplete() {
+          const tt = controls.target
+          azimuthRef.current = Math.atan2(cam.position.x - tt.x, cam.position.z - tt.z)
+          controls.enabled = true
+          onComplete()
+        },
+      })
+      .to(
+        controls.target,
+        {
+          x: snapshot.target.x,
+          y: snapshot.target.y,
+          z: snapshot.target.z,
+          duration: d,
+          ease: 'power2.inOut',
+        },
+        0,
+      )
+      .to(
+        cam.position,
+        {
+          x: snapshot.perspPosition.x,
+          y: snapshot.perspPosition.y,
+          z: snapshot.perspPosition.z,
+          duration: d,
+          ease: 'power2.inOut',
+        },
+        0,
+      )
+  } else {
+    const cam = orthoCam
+    gsap
+      .timeline({
+        onUpdate() {
+          cam.lookAt(controls.target.x, 0, controls.target.z)
+          cam.updateProjectionMatrix()
+          controls.update()
+        },
+        onComplete() {
+          controls.enabled = true
+          onComplete()
+        },
+      })
+      .to(
+        controls.target,
+        {
+          x: snapshot.target.x,
+          y: snapshot.target.y,
+          z: snapshot.target.z,
+          duration: d,
+          ease: 'power2.inOut',
+        },
+        0,
+      )
+      .to(
+        cam.position,
+        {
+          x: snapshot.orthoPosition.x,
+          y: snapshot.orthoPosition.y,
+          z: snapshot.orthoPosition.z,
+          duration: d,
+          ease: 'power2.inOut',
+        },
+        0,
+      )
+      .to(cam, { zoom: snapshot.orthoZoom, duration: d, ease: 'power2.inOut' }, 0)
+  }
+}
+
 /* ── Component ─────────────────────────────────────────────────────── */
 
 interface CameraRigProps {
@@ -287,6 +401,12 @@ export function CameraRig({
       ORBIT_CAMERA_POSITION[2] - TARGET[2],
     ),
   )
+
+  /**
+   * Orbit / map pose from before the first building in the current selection
+   * session. Cleared after the restore animation completes on close.
+   */
+  const preSelectionCameraRef = useRef<PreSelectionCameraSnapshot | null>(null)
 
   /**
    * Snapshot values only consumed at transition-time into refs so the
@@ -486,14 +606,35 @@ export function CameraRig({
     const perspCam = perspCamRef.current
     const orthoCam = orthoCamRef.current
 
+    if (!controls || !perspCam || !orthoCam) return
+
     if (!selectedEntity) {
-      if (controls && perspCam && orthoCam) {
+      const snapshot = preSelectionCameraRef.current
+      if (snapshot) {
+        killBuildingFocusTweens(controls, perspCam, orthoCam)
+        const { transitionSpeed: duration } = settingsRef.current
+        restorePreSelectionCamera(
+          controls,
+          perspCam,
+          orthoCam,
+          snapshot,
+          duration,
+          azimuthRef,
+          () => {
+            preSelectionCameraRef.current = null
+          },
+        )
+      } else {
         killBuildingFocusTweens(controls, perspCam, orthoCam)
       }
-      return
+      return () => {
+        killBuildingFocusTweens(controls, perspCam, orthoCam)
+      }
     }
 
-    if (!controls || !perspCam || !orthoCam) return
+    if (!preSelectionCameraRef.current) {
+      preSelectionCameraRef.current = capturePreSelectionCamera(controls, perspCam, orthoCam)
+    }
 
     const buildingId = selectedEntity
     let raf = 0

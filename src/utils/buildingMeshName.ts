@@ -11,15 +11,18 @@ export function canonicalBuildingMeshName(name: string): string {
   const trimmed = name.trim()
   if (!trimmed) return name
 
-  if (/^building_[a-zA-Z]+_\d+$/.test(trimmed)) {
-    return trimmed.replace(/_\d+$/, '')
+  // Blender collections often export as `buildings_*`; RDS / API ids use `building_*`.
+  const normalized = trimmed.replace(/^buildings_/i, 'building_')
+
+  if (/^building_[a-zA-Z0-9]+_\d+$/.test(normalized)) {
+    return normalized.replace(/_\d+$/, '')
   }
 
-  if (/^building_[a-zA-Z]+\.\d+$/.test(trimmed)) {
-    return trimmed.replace(/\.\d+$/, '')
+  if (/^building_[a-zA-Z0-9]+\.\d+$/.test(normalized)) {
+    return normalized.replace(/\.\d+$/, '')
   }
 
-  return name
+  return normalized
 }
 
 /** Human / API label from a Blender object name, with fallback when empty. */
