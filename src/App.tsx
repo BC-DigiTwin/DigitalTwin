@@ -13,6 +13,8 @@ import { RoadsGroup } from './components/scene/RoadsGroup'
 import { TerrainGroup } from './components/scene/TerrainGroup'
 import { StressTestGroup } from './components/scene/StressTestGroup'
 import { InstancedRimExample } from './components/scene/InstancedRimExample'
+import { WaypointsGroup } from './components/scene/WaypointsGroup'
+import { WaypointsPanel } from './components/WaypointsPanel'
 import { LoadingScreen } from './components/LoadingScreen'
 import { selectedEntitySelector, useStore, type LayerName } from './store/useStore'
 import './App.css'
@@ -52,6 +54,7 @@ function LayerToggles() {
     'Stress Test': stressTest,
     'Stress test mesh count': stressMeshCount,
     'Instanced Rim': instancedRim,
+    Waypoints: waypoints,
   } = useControls(
     'Layer Visibility',
     {
@@ -67,6 +70,7 @@ function LayerToggles() {
         render: (get) => !!get('Layer Visibility.Stress Test'),
       },
       'Instanced Rim': { value: initialRef.current.instancedRim ?? false },
+      Waypoints: { value: initialRef.current.waypoints ?? true },
     },
     { collapsed: true },
   )
@@ -77,11 +81,12 @@ function LayerToggles() {
       ['terrain', terrain],
       ['stressTest', stressTest],
       ['instancedRim', instancedRim],
+      ['waypoints', waypoints],
     ]
     for (const [layer, visible] of entries) {
       setLayerVisible(layer, visible)
     }
-  }, [buildings, terrain, stressTest, instancedRim, setLayerVisible])
+  }, [buildings, terrain, stressTest, instancedRim, waypoints, setLayerVisible])
 
   useEffect(() => {
     if (stressTest && typeof stressMeshCount === 'number') {
@@ -614,7 +619,13 @@ function CameraRigWithControls() {
       'Map Height': { value: DEFAULT_CAMERA_SETTINGS.mapHeight, min: 20, max: 200, step: 1 },
       'Map View Size': { value: DEFAULT_CAMERA_SETTINGS.mapViewSize, min: 10, max: 150, step: 1 },
       'Orbit FOV': { value: DEFAULT_CAMERA_SETTINGS.orbitFov, min: 10, max: 100, step: 1 },
-      'Transition Speed': { value: DEFAULT_CAMERA_SETTINGS.transitionSpeed, min: 0.1, max: 3.0, step: 0.05 },
+      'Transition Speed': {
+        value: DEFAULT_CAMERA_SETTINGS.transitionSpeed,
+        min: 0.4,
+        max: 4.0,
+        step: 0.05,
+        label: 'Transition (s)',
+      },
       Damping: { value: DEFAULT_CAMERA_SETTINGS.damping, min: 0.01, max: 0.5, step: 0.01 },
     },
     { collapsed: true },
@@ -704,6 +715,49 @@ function BuildingDetailsPanel() {
   )
 }
 
+/**
+ * Top-right floating button that snaps the camera back to the default
+ * top-down overview of the whole campus. Lives outside the Canvas and drives
+ * `CameraRig` through the Zustand store (`requestCameraReset`).
+ */
+function CameraResetButton() {
+  const requestCameraReset = useStore((s) => s.requestCameraReset)
+  return (
+    <button
+      type="button"
+      onClick={requestCameraReset}
+      className="fixed right-4 top-4 z-50 flex items-center gap-2 rounded-full border border-white/15 bg-neutral-950/65 px-4 py-2 text-sm font-medium text-white shadow-lg backdrop-blur-2xl transition hover:bg-neutral-900/85"
+      title="Reset camera to the default top-down view"
+      aria-label="Reset camera to top-down view"
+    >
+      <TopDownIcon className="h-4 w-4" />
+      Top-down view
+    </button>
+  )
+}
+
+function TopDownIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className={className} aria-hidden>
+      <rect
+        x="3"
+        y="3"
+        width="14"
+        height="14"
+        rx="2"
+        stroke="currentColor"
+        strokeWidth="1.5"
+      />
+      <path
+        d="M10 6.5v7M6.5 10h7"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
 export default function App() {
   useHydrateLocations()
 
@@ -713,6 +767,7 @@ export default function App() {
         {/* HTML overlay — tracks drei's internal loading progress */}
         <LoadingScreen />
         <BuildingDetailsPanel />
+        <CameraResetButton />
 
         <Canvas
           dpr={[1, 2]}
@@ -739,6 +794,7 @@ export default function App() {
             <TerrainGroup />
             <StressTestGroup />
             <InstancedRimExample />
+            <WaypointsGroup />
 
             {/* Asset-heavy layers suspend until loaded; errors are caught
                 and surfaced via the HTML overlay (LoadingScreen).
@@ -755,6 +811,7 @@ export default function App() {
           </CameraControlProvider>
         </Canvas>
         <InfoPanel />
+        <WaypointsPanel />
       </div>
     </DebugWrapper>
   )

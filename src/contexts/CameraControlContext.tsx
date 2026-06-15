@@ -1,11 +1,12 @@
 import {
   createContext,
   useContext,
-  useCallback,
-  useState,
+  useEffect,
+  useRef,
   type ReactNode,
 } from 'react'
 import type { CameraMode } from '../components/CameraRig'
+import { useStore } from '../store/useStore'
 
 /* ── Context value ─────────────────────────────────────────────────── */
 
@@ -17,9 +18,9 @@ interface CameraControlContextValue {
    * Toggle between `'orbit'` and `'map'`.
    *
    * This **only** flips the `mode` state.  It does NOT read or sync the
-   * OrbitControls target into React state — that is done imperatively
+   * camera look target into React state — that is done imperatively
    * inside `CameraRig` at the moment the transition begins (via
-   * `controlsRef.current.target.clone()`).
+   * `controlsRef.current.getTarget(...)`).
    */
   toggleMode: () => void
 }
@@ -56,12 +57,22 @@ export function CameraControlProvider({
   children,
   initialMode = 'orbit',
 }: CameraControlProviderProps) {
-  const [mode, setMode] = useState<CameraMode>(initialMode)
+  // Camera mode lives in the Zustand store so HTML overlays *outside* the
+  // Canvas (e.g. a reset-view button) can drive it too, not just components
+  // inside the R3F tree. The context keeps the same `{ mode, toggleMode }`
+  // shape so existing consumers are unchanged.
+  const mode = useStore((s) => s.cameraMode) as CameraMode
+  const toggleMode = useStore((s) => s.toggleCameraMode)
+  const setCameraMode = useStore((s) => s.setCameraMode)
 
-  // toggleMode only flips state — no camera/target logic here.
-  const toggleMode = useCallback(() => {
-    setMode((prev) => (prev === 'orbit' ? 'map' : 'orbit'))
-  }, [])
+  const didInit = useRef(false)
+  useEffect(() => {
+    if (didInit.current) return
+    didInit.current = true
+    if (initialMode !== useStore.getState().cameraMode) {
+      setCameraMode(initialMode)
+    }
+  }, [initialMode, setCameraMode])
 
   return (
     <CameraControlContext.Provider value={{ mode, toggleMode }}>

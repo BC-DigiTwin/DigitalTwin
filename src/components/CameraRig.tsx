@@ -150,6 +150,20 @@ const BUILDING_FOCUS_DURATION_MULT = 0.45
 /** Map: multiply fitted zoom by this (<1 = zoom out more) for breathing room. */
 const BUILDING_FOCUS_MAP_ZOOM_FRAC = 0.82
 
+/* ── Waypoint fly-to tuning ────────────────────────────────────────── */
+
+/** Orbit stand-off distance (XZ) from the waypoint. */
+const WAYPOINT_FLYTO_DISTANCE = 42
+/** Orbit eye height above the waypoint. */
+const WAYPOINT_FLYTO_HEIGHT = 30
+/** Map-mode zoom when flying to a single waypoint (closer look). */
+const WAYPOINT_FLYTO_MAP_ZOOM = 2.2
+
+/* ── Reset-to-top-down tuning ──────────────────────────────────────── */
+
+/** Padding multiplier so the whole campus fits with breathing room on reset. */
+const RESET_FIT_MARGIN = 1.12
+
 /**
  * Perspective clip planes for the campus footprint (~900 m diagonal).
  * A tight `far` (e.g. 1000) cuts geometry when orbiting/zooming out and reads
@@ -269,6 +283,8 @@ export function CameraRig({
   const size = useThree((s) => s.size)
   const scene = useThree((s) => s.scene)
   const selectedEntity = useStore((s) => s.selectedEntity)
+  const selectedWaypointId = useStore((s) => s.selectedWaypointId)
+  const cameraResetNonce = useStore((s) => s.cameraResetNonce)
 
   const { mapHeight, mapViewSize, orbitFov, damping } = settings
 
@@ -649,6 +665,210 @@ export function CameraRig({
       }
     }
   }, [selectedEntity, scene])
+
+  /* ── Fly to the selected waypoint (orbit + map) ───────────────── */
+  useEffect(() => {
+    if (!selectedWaypointId) return
+    const controls = controlsRef.current
+    const perspCam = perspCamRef.current
+    const orthoCam = orthoCamRef.current
+    if (!controls || !perspCam || !orthoCam) return
+
+    const wp = useStore
+      .getState()
+      .waypoints.find((w) => w.id === selectedWaypointId)
+    if (!wp) return
+
+    const targetX = wp.x
+    const targetZ = wp.z
+
+    killBuildingFocusTweens(controls, perspCam, orthoCam)
+    const { transitionSpeed: duration, mapHeight: height } = settingsRef.current
+    controls.enabled = false
+
+    const orthoActive = controls.object === orthoCam
+
+    if (!orthoActive) {
+      // Orbit: keep the current approach azimuth, glide to a stand-off pose.
+      const cam = perspCam
+      const dx = cam.position.x - targetX
+      const dz = cam.position.z - targetZ
+      const distXZ = Math.hypot(dx, dz)
+      let nx = 0
+      let nz = 1
+      if (distXZ >= 1e-3) {
+        nx = dx / distXZ
+        nz = dz / distXZ
+      } else {
+        nx = Math.sin(azimuthRef.current)
+        nz = Math.cos(azimuthRef.current)
+      }
+      const eyeX = targetX + nx * WAYPOINT_FLYTO_DISTANCE
+      const eyeY = WAYPOINT_FLYTO_HEIGHT
+      const eyeZ = targetZ + nz * WAYPOINT_FLYTO_DISTANCE
+
+      gsap
+        .timeline({
+          onUpdate() {
+            cam.lookAt(controls.target)
+            controls.update()
+          },
+          onComplete() {
+            const tt = controls.target
+            azimuthRef.current = Math.atan2(
+              cam.position.x - tt.x,
+              cam.position.z - tt.z,
+            )
+            controls.enabled = true
+          },
+        })
+        .to(
+          controls.target,
+          { x: targetX, y: 2, z: targetZ, duration, ease: 'power2.inOut' },
+          0,
+        )
+        .to(
+          cam.position,
+          { x: eyeX, y: eyeY, z: eyeZ, duration, ease: 'power2.inOut' },
+          0,
+        )
+    } else {
+      // Map: pan + zoom in on the waypoint, keep the top-down look.
+      const cam = orthoCam
+      gsap
+        .timeline({
+          onUpdate() {
+            cam.lookAt(controls.target.x, 0, controls.target.z)
+            cam.updateProjectionMatrix()
+            controls.update()
+          },
+          onComplete() {
+            controls.enabled = true
+          },
+        })
+        .to(
+          controls.target,
+          { x: targetX, y: 0, z: targetZ, duration, ease: 'power2.inOut' },
+          0,
+        )
+        .to(
+          cam.position,
+          { x: targetX, y: height, z: targetZ, duration, ease: 'power2.inOut' },
+          0,
+        )
+        .to(
+          cam,
+          {
+            zoom: Math.max(cam.zoom, WAYPOINT_FLYTO_MAP_ZOOM),
+            duration,
+            ease: 'power2.inOut',
+          },
+          0,
+        )
+    }
+
+    return () => {
+      if (controls && perspCam && orthoCam) {
+        killBuildingFocusTweens(controls, perspCam, orthoCam)
+      }
+    }
+  }, [selectedWaypointId])
+
+  /* ── Reset to the default top-down overview (button on top-right) ── */
+  const resetInitRef = useRef(true)
+  useEffect(() => {
+    if (resetInitRef.current) {
+      resetInitRef.current = false
+      return
+    }
+    const controls = controlsRef.current
+    const perspCam = perspCamRef.current
+    const orthoCam = orthoCamRef.current
+    if (!controls || !perspCam || !orthoCam) return
+
+    killBuildingFocusTweens(controls, perspCam, orthoCam)
+
+    const { mapHeight: height, transitionSpeed: duration, mapViewSize } =
+      settingsRef.current
+
+    const { xMin, xMax, zMin, zMax } = TERRAIN_GROUND_PLANE_BOUNDS
+    const cx = (xMin + xMax) / 2
+    const cz = (zMin + zMax) / 2
+    const spanX = Math.max(Math.abs(xMax - xMin), 1)
+    const spanZ = Math.max(Math.abs(zMax - zMin), 1)
+    const fitZoom = Math.min(
+      (2 * mapViewSize) / (spanX * RESET_FIT_MARGIN),
+      (2 * mapViewSize) / (spanZ * RESET_FIT_MARGIN),
+    )
+    const targetZoom = THREE.MathUtils.clamp(fitZoom, 0.02, 14)
+
+    controls.enabled = false
+    const wasOrbit = controls.object === perspCam
+
+    if (wasOrbit) {
+      // Fly the perspective camera straight above campus center, then hand
+      // off to the orthographic camera framed on the whole campus.
+      orthoCam.position.set(cx, height, cz)
+      orthoCam.up.set(0, 0, -1)
+      orthoCam.lookAt(cx, 0, cz)
+      orthoCam.zoom = targetZoom
+      orthoCam.far = height * 2
+      orthoCam.updateProjectionMatrix()
+
+      const flyX = cx
+      const flyZ = cz + POLE_EPSILON
+
+      gsap.to(perspCam.position, {
+        x: flyX,
+        y: height,
+        z: flyZ,
+        duration,
+        ease: 'power2.inOut',
+        onUpdate() {
+          perspCam.lookAt(cx, 0, cz)
+        },
+        onComplete() {
+          set({ camera: orthoCam })
+          controls.object = orthoCam
+          controls.target.set(cx, 0, cz)
+          applyControlMapping(controls, 'map')
+          controls.enabled = true
+          azimuthRef.current = 0
+          // Keep mode state in sync without re-triggering the transition
+          // effect: set prevMode first, then publish the store mode.
+          prevModeRef.current = 'map'
+          useStore.getState().setCameraMode('map')
+        },
+      })
+    } else {
+      // Already top-down: pan + zoom out to the campus overview, north-up.
+      const cam = orthoCam
+      cam.up.set(0, 0, -1)
+      gsap
+        .timeline({
+          onUpdate() {
+            cam.lookAt(controls.target.x, 0, controls.target.z)
+            cam.updateProjectionMatrix()
+            controls.update()
+          },
+          onComplete() {
+            controls.enabled = true
+            azimuthRef.current = 0
+          },
+        })
+        .to(
+          controls.target,
+          { x: cx, y: 0, z: cz, duration, ease: 'power2.inOut' },
+          0,
+        )
+        .to(
+          cam.position,
+          { x: cx, y: height, z: cz, duration, ease: 'power2.inOut' },
+          0,
+        )
+        .to(cam, { zoom: targetZoom, duration, ease: 'power2.inOut' }, 0)
+    }
+  }, [cameraResetNonce, set])
 
   /* ── Scene graph: both cameras always mounted ───────────────── */
   return (
