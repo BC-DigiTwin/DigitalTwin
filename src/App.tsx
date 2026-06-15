@@ -24,7 +24,6 @@ import { PlaceholderBox } from './components/PlaceholderBox'
 import { useHydrateLocations } from './hooks/useHydrateLocations'
 import { SceneBackground } from './components/scene/SceneBackground'
 import { SidePanel, type BuildingApiData } from './components/SidePanel'
-import { InfoPanel } from './components/InfoPanel'
 import { mockBuildings } from '../lib/mockDatabase'
 import {
   SELECTION_SOLID_BODY_COLOR_DEFAULT,
@@ -754,7 +753,6 @@ export default function App() {
             </AssetErrorBoundary>
           </CameraControlProvider>
         </Canvas>
-        <InfoPanel />
       </div>
     </DebugWrapper>
   )
