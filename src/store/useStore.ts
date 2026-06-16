@@ -267,7 +267,7 @@ export const useStore = create<Store>()(
             selectedWaypointId: null,
             hoveredWaypointId: null,
             waypointPlacementMode: false,
-            waypointDraftCategory: 'entrance',
+            waypointDraftCategory: 'accessibility',
             waypointCategoryFilters: { ...DEFAULT_WAYPOINT_CATEGORY_FILTERS },
             campusBuildings: [],
 

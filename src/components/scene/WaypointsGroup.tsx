@@ -3,7 +3,6 @@ import * as THREE from 'three'
 import { useThree, type ThreeEvent } from '@react-three/fiber'
 import { TransformControls } from '@react-three/drei'
 import type { TransformControls as TransformControlsImpl } from 'three-stdlib'
-import type { default as CameraControlsImpl } from 'camera-controls'
 
 import { useStore } from '../../store/useStore'
 import { RENDER_LAYERS } from '../../constants/renderLayers'
@@ -15,7 +14,6 @@ import {
   snapWaypointYToTerrain,
 } from '../../utils/waypointTerrain'
 import {
-  generateDummyWaypointsForBuildings,
   generateWaypointId,
   INITIAL_WAYPOINTS,
   loadStoredWaypoints,
@@ -24,6 +22,9 @@ import {
   type WaypointCategory,
 } from '../../../lib/mockWaypoints'
 import { WaypointMarker, type WaypointVisualState } from './WaypointMarker'
+
+/** Uniform marker enlargement applied in the top-down map view. */
+const MAP_MARKER_SCALE = 2.1
 
 /* ── Hydration ───────────────────────────────────────────────────────── */
 
@@ -49,35 +50,6 @@ function useHydrateWaypoints() {
     })
     return unsub
   }, [])
-}
-
-/** Ids of the legacy hand-authored seed (scattered near the origin). */
-const LEGACY_SEED_IDS = new Set(INITIAL_WAYPOINTS.map((w) => w.id))
-
-/**
- * Once `BuildingsGroup` has measured building footprints, migrate the waypoint
- * set onto the buildings — but only when the user hasn't customized it. We
- * treat the list as "untouched" when it's empty or contains only legacy seed
- * ids; any in-app placement/edit (which mints `wp_<category>_<hex>` or
- * `wp_<building>_*` ids) opts out so we never clobber real work. Runs at most
- * once per session because the replacement ids are no longer all-legacy.
- */
-function useReseedWaypointsFromBuildings() {
-  const campusBuildings = useStore((s) => s.campusBuildings)
-
-  useEffect(() => {
-    const measured = campusBuildings.some((b) => b.cx !== undefined)
-    if (!measured) return
-
-    const current = useStore.getState().waypoints
-    const untouched =
-      current.length === 0 || current.every((w) => LEGACY_SEED_IDS.has(w.id))
-    if (!untouched) return
-
-    const generated = generateDummyWaypointsForBuildings(campusBuildings)
-    if (generated.length === 0) return
-    useStore.getState().setWaypoints(generated)
-  }, [campusBuildings])
 }
 
 /* ── Placement ground catcher ────────────────────────────────────────── */
@@ -193,14 +165,16 @@ interface WaypointDragHandlesProps {
 /**
  * Translate-only TransformControls bound to the selected marker. Y is hidden
  * and re-snapped on every change so dragging is constrained to XZ even if
- * mouse motion projects into Y. While dragging, the active CameraControls
+ * mouse motion projects into Y. While dragging, the active camera controls
  * are paused so a click+drag isn't fighting an orbit pan.
  */
 function WaypointDragHandles({ target, waypointId }: WaypointDragHandlesProps) {
   const tcRef = useRef<TransformControlsImpl | null>(null)
-  const cameraControls = useThree(
-    (s) => s.controls,
-  ) as CameraControlsImpl | null
+  // The active scene controls are OrbitControls registered by CameraRig via
+  // `set({ controls })`. We only need `.enabled` to pause orbit while dragging.
+  const cameraControls = useThree((s) => s.controls) as {
+    enabled: boolean
+  } | null
 
   /**
    * The canvas raycaster is locked to `RENDER_LAYERS.INTERACTIVE`, so the
@@ -290,8 +264,8 @@ function WaypointDragHandles({ target, waypointId }: WaypointDragHandlesProps) {
  *   • Mounts a placement ground catcher while placement mode is on.
  *   • Attaches `<TransformControls>` to the selected marker so the user can
  *     drag it on XZ; Y is re-snapped to terrain on every change.
- *   • Owns a small focus controller that smoothly flies the active
- *     CameraControls to whichever waypoint is selected.
+ *   • Camera fly-to for the selected waypoint is handled by `CameraRig`
+ *     (it observes `selectedWaypointId` and glides the camera there).
  *
  * Building selection is left entirely to `BuildingsGroup`; waypoint clicks
  * call `stopPropagation()` to prevent the BuildingsGroup root listener from
@@ -299,7 +273,6 @@ function WaypointDragHandles({ target, waypointId }: WaypointDragHandlesProps) {
  */
 export function WaypointsGroup() {
   useHydrateWaypoints()
-  useReseedWaypointsFromBuildings()
 
   const visible = useStore((s) => s.layers.waypoints)
   const waypoints = useStore((s) => s.waypoints)
@@ -308,6 +281,11 @@ export function WaypointsGroup() {
   const placementMode = useStore((s) => s.waypointPlacementMode)
   const categoryFilters = useStore((s) => s.waypointCategoryFilters)
   const setSelectedWaypointId = useStore((s) => s.setSelectedWaypointId)
+  const cameraMode = useStore((s) => s.cameraMode)
+
+  // Pins are world-sized, so the top-down map (orthographic, whole campus in
+  // frame) shrinks them to specks. Enlarge each marker in map view.
+  const markerScale = cameraMode === 'map' ? MAP_MARKER_SCALE : 1
 
   /** id → group ref. Populated via ref callbacks below; consumed by TransformControls. */
   const markerRefs = useRef<Map<string, THREE.Group>>(new Map())
@@ -359,6 +337,7 @@ export function WaypointsGroup() {
           waypoint={wp}
           yFloor={snapWaypointYToTerrain(wp.x, wp.z)}
           state={resolveState(wp.id)}
+          markerScale={markerScale}
           onSelect={handleMarkerSelect}
         />
       ))}

@@ -5,7 +5,6 @@ import {
   WAYPOINT_CATEGORIES,
   WAYPOINT_CATEGORY_META,
   exportWaypointsAsTsSnippet,
-  generateDummyWaypointsForBuildings,
   type Waypoint,
   type WaypointCategory,
 } from '../../lib/mockWaypoints'
@@ -112,7 +111,6 @@ export function WaypointsPanel() {
   )
   const updateWaypoint = useStore((s) => s.updateWaypoint)
   const removeWaypoint = useStore((s) => s.removeWaypoint)
-  const setWaypoints = useStore((s) => s.setWaypoints)
   const layerVisible = useStore((s) => s.layers.waypoints)
   const setLayerVisible = useStore((s) => s.setLayerVisible)
   const campusBuildings = useStore((s) => s.campusBuildings)
@@ -121,9 +119,6 @@ export function WaypointsPanel() {
   const [exportStatus, setExportStatus] = useState<
     'idle' | 'copied' | 'failed'
   >('idle')
-
-  // Two-click guard for the destructive "replace all with dummy points" action.
-  const [confirmRegen, setConfirmRegen] = useState(false)
 
   // Selecting a building in the scene focuses the panel on that building's
   // waypoints. The user can dismiss focus ("Show all") without clearing the
@@ -189,34 +184,12 @@ export function WaypointsPanel() {
   }, [waypoints, categoryFilters, knownBuildings, campusBuildings, focusBuildingId])
 
   const categoryCounts = useMemo(() => {
-    const counts: Record<WaypointCategory, number> = {
-      entrance: 0,
-      stairs: 0,
-      bathroom: 0,
-    }
+    const counts = Object.fromEntries(
+      WAYPOINT_CATEGORIES.map((c) => [c, 0]),
+    ) as Record<WaypointCategory, number>
     for (const wp of waypoints) counts[wp.category] += 1
     return counts
   }, [waypoints])
-
-  /** Buildings whose footprint has been measured (and so can host points). */
-  const measuredBuildingCount = useMemo(
-    () => campusBuildings.filter((b) => b.cx !== undefined).length,
-    [campusBuildings],
-  )
-
-  const handleGenerateDummy = () => {
-    if (!confirmRegen) {
-      setConfirmRegen(true)
-      window.setTimeout(() => setConfirmRegen(false), 3500)
-      return
-    }
-    setConfirmRegen(false)
-    const generated = generateDummyWaypointsForBuildings(campusBuildings)
-    if (generated.length === 0) return
-    setWaypoints(generated)
-    setSelectedWaypointId(null)
-    setDismissedBuildingFocus(null)
-  }
 
   const handleExport = async () => {
     const snippet = exportWaypointsAsTsSnippet(waypoints)
@@ -323,28 +296,6 @@ export function WaypointsPanel() {
             move it; Y always snaps to terrain.
           </p>
         )}
-
-        <div className="border-t border-white/10 pt-3">
-          <button
-            type="button"
-            onClick={handleGenerateDummy}
-            disabled={measuredBuildingCount === 0}
-            className={`w-full rounded-md px-3 py-2 text-xs font-semibold ring-1 transition disabled:cursor-not-allowed disabled:opacity-40 ${
-              confirmRegen
-                ? 'bg-amber-400/90 text-amber-950 ring-amber-300 hover:bg-amber-300'
-                : 'bg-white/8 text-white ring-white/15 hover:bg-white/15'
-            }`}
-            title="Replace every waypoint with a fresh set placed inside each building"
-          >
-            {confirmRegen
-              ? `Replace all ${waypoints.length} with ${measuredBuildingCount * 3} dummy points? Click to confirm`
-              : `Place dummy points in all buildings (${measuredBuildingCount})`}
-          </button>
-          <p className="mt-1.5 text-[11px] leading-relaxed text-white/45">
-            Adds an entrance, stairs &amp; restroom inside each building's
-            footprint. Overwrites the current list.
-          </p>
-        </div>
       </section>
 
       {/* Filters */}
@@ -449,7 +400,7 @@ export function WaypointsPanel() {
                         }`}
                       >
                         <span
-                          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold uppercase ring-1 transition-transform duration-150"
+                          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full ring-1 transition-transform duration-150"
                           style={{
                             color: meta.color,
                             borderColor: `${meta.color}55`,
@@ -460,7 +411,10 @@ export function WaypointsPanel() {
                             transform: isHovered ? 'scale(1.12)' : undefined,
                           }}
                         >
-                          {meta.label.slice(0, 2)}
+                          <WaypointCategoryIcon
+                            category={wp.category}
+                            className="h-3.5 w-3.5"
+                          />
                         </span>
                         <span className="min-w-0 flex-1">
                           <span className="block truncate font-medium">
@@ -648,4 +602,109 @@ function ChevronLeftIcon({ className }: { className?: string }) {
       />
     </svg>
   )
+}
+
+/* ── Category glyphs (match the in-scene marker sprites) ──────────────── */
+
+function AccessibilityIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden
+    >
+      <circle cx="10.5" cy="4" r="1.6" fill="currentColor" stroke="none" />
+      <path d="M9 7v5h4l2 4.5" />
+      <path d="M9 9.2h3.3" />
+      <circle cx="10" cy="15.5" r="4.3" />
+    </svg>
+  )
+}
+
+function ElevatorIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden
+    >
+      <rect x="5" y="3.5" width="14" height="17" rx="2" />
+      <path d="M12 7l2.4 3h-4.8z" fill="currentColor" stroke="none" />
+      <path d="M12 17l-2.4-3h4.8z" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
+function RestroomIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden>
+      <circle cx="12" cy="4.3" r="2.2" />
+      <path d="M9.2 8.6h5.6a1 1 0 0 1 1 1.1l-1 5.3h-1.2l.35 5h-3.7l.35-5H9.2l-1-5.3a1 1 0 0 1 1-1.1z" />
+    </svg>
+  )
+}
+
+function EmergencyPhoneIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden>
+      <path d="M6.8 4.6c.5-.4 1.2-.3 1.6.2l1.5 2c.34.45.3 1.07-.1 1.46l-1 1c.7 1.5 1.9 2.7 3.4 3.4l1-1c.4-.4 1-.44 1.46-.1l2 1.5c.5.4.6 1.1.2 1.6l-1 1.3c-.5.6-1.3.9-2 .7-3.9-1.1-6.5-3.7-7.6-7.6-.2-.7.1-1.5.7-2z" />
+    </svg>
+  )
+}
+
+function ParkingIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden
+    >
+      <rect x="4" y="4" width="16" height="16" rx="3" />
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M9.6 8h3.3a2.7 2.7 0 0 1 0 5.4H11.1V16H9.6V8zm1.5 1.4v2.6h1.8a1.3 1.3 0 0 0 0-2.6h-1.8z"
+        fill="currentColor"
+        stroke="none"
+      />
+    </svg>
+  )
+}
+
+/** Maps a waypoint category to its glyph, tinted via `currentColor`. */
+function WaypointCategoryIcon({
+  category,
+  className,
+}: {
+  category: WaypointCategory
+  className?: string
+}) {
+  switch (category) {
+    case 'accessibility':
+      return <AccessibilityIcon className={className} />
+    case 'elevator':
+      return <ElevatorIcon className={className} />
+    case 'restroomAllGender':
+    case 'restroomPublic':
+      return <RestroomIcon className={className} />
+    case 'emergencyPhone':
+      return <EmergencyPhoneIcon className={className} />
+    case 'parking':
+      return <ParkingIcon className={className} />
+    default:
+      return null
+  }
 }

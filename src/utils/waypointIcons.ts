@@ -95,85 +95,151 @@ function drawCategoryGlyph(
   cy: number,
 ): void {
   switch (category) {
-    case 'entrance':
-      drawEntranceGlyph(ctx, cx, cy)
+    case 'accessibility':
+      drawAccessibilityGlyph(ctx, cx, cy)
       return
-    case 'stairs':
-      drawStairsGlyph(ctx, cx, cy)
+    case 'elevator':
+      drawElevatorGlyph(ctx, cx, cy)
       return
-    case 'bathroom':
-      drawBathroomGlyph(ctx, cx, cy)
+    case 'restroomAllGender':
+    case 'restroomPublic':
+      drawRestroomGlyph(ctx, cx, cy)
+      return
+    case 'emergencyPhone':
+      drawEmergencyPhoneGlyph(ctx, cx, cy)
+      return
+    case 'parking':
+      drawParkingGlyph(ctx, cx, cy)
       return
   }
 }
 
-/** Door + arrow. Suggests "way in". */
-function drawEntranceGlyph(
+/** Wheelchair stick figure — the international symbol of access. */
+function drawAccessibilityGlyph(
   ctx: CanvasRenderingContext2D,
   cx: number,
   cy: number,
 ): void {
-  const w = 24
-  const h = 40
-  const doorX = cx - 6
-  const doorY = cy - h / 2
-
-  ctx.lineWidth = 5
+  // Head
   ctx.beginPath()
-  ctx.moveTo(doorX, doorY + h)
-  ctx.lineTo(doorX, doorY)
-  ctx.lineTo(doorX + w, doorY)
-  ctx.lineTo(doorX + w, doorY + h)
+  ctx.arc(cx - 2, cy - 26, 8, 0, Math.PI * 2)
+  ctx.fill()
+
+  ctx.lineWidth = 7
+  ctx.lineJoin = 'round'
+  ctx.lineCap = 'round'
+
+  // Torso → seat → lower leg → footrest
+  ctx.beginPath()
+  ctx.moveTo(cx - 2, cy - 14)
+  ctx.lineTo(cx - 2, cy + 4)
+  ctx.lineTo(cx + 16, cy + 4)
+  ctx.lineTo(cx + 22, cy + 22)
   ctx.stroke()
 
-  const arrowY = cy
-  const arrowHeadX = doorX + 4
+  // Arm to the wheel
   ctx.beginPath()
-  ctx.moveTo(doorX - 20, arrowY)
-  ctx.lineTo(arrowHeadX, arrowY)
+  ctx.moveTo(cx - 2, cy - 8)
+  ctx.lineTo(cx + 14, cy - 4)
   ctx.stroke()
 
+  // Wheel
+  ctx.lineWidth = 6
   ctx.beginPath()
-  ctx.moveTo(arrowHeadX, arrowY)
-  ctx.lineTo(arrowHeadX - 10, arrowY - 8)
-  ctx.lineTo(arrowHeadX - 10, arrowY + 8)
+  ctx.arc(cx - 4, cy + 14, 18, 0, Math.PI * 2)
+  ctx.stroke()
+}
+
+/** Telephone handset, angled like the classic phone pictogram. */
+function drawEmergencyPhoneGlyph(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+): void {
+  ctx.save()
+  ctx.translate(cx, cy)
+  ctx.rotate(-Math.PI / 4)
+
+  ctx.lineWidth = 11
+  ctx.lineCap = 'round'
+
+  // Handle bar
+  ctx.beginPath()
+  ctx.moveTo(0, -16)
+  ctx.lineTo(0, 16)
+  ctx.stroke()
+
+  // Ear + mouth pieces
+  ctx.beginPath()
+  ctx.ellipse(0, -18, 10, 7, 0, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.beginPath()
+  ctx.ellipse(0, 18, 10, 7, 0, 0, Math.PI * 2)
+  ctx.fill()
+
+  ctx.restore()
+}
+
+/** Boxed "P" — the universal parking pictogram. */
+function drawParkingGlyph(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+): void {
+  ctx.lineWidth = 7
+  ctx.lineJoin = 'round'
+  ctx.beginPath()
+  const x = cx - 26
+  const y = cy - 30
+  const w = 52
+  const h = 60
+  if (typeof ctx.roundRect === 'function') {
+    ctx.roundRect(x, y, w, h, 12)
+  } else {
+    ctx.rect(x, y, w, h)
+  }
+  ctx.stroke()
+
+  ctx.font = "bold 52px 'Arial', 'Helvetica', sans-serif"
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText('P', cx, cy + 3)
+}
+
+/** Up + down triangles — the standard elevator pictogram. */
+function drawElevatorGlyph(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+): void {
+  const half = 9
+  const gap = 5
+
+  // Up triangle (top).
+  ctx.beginPath()
+  ctx.moveTo(cx, cy - gap - 18)
+  ctx.lineTo(cx - half, cy - gap)
+  ctx.lineTo(cx + half, cy - gap)
+  ctx.closePath()
+  ctx.fill()
+
+  // Down triangle (bottom).
+  ctx.beginPath()
+  ctx.moveTo(cx, cy + gap + 18)
+  ctx.lineTo(cx - half, cy + gap)
+  ctx.lineTo(cx + half, cy + gap)
   ctx.closePath()
   ctx.fill()
 }
 
-/** Three ascending steps. */
-function drawStairsGlyph(
-  ctx: CanvasRenderingContext2D,
-  cx: number,
-  cy: number,
-): void {
-  const step = 12
-  const baseY = cy + 18
-  const leftX = cx - 24
-
-  ctx.lineWidth = 5
-  ctx.beginPath()
-  ctx.moveTo(leftX, baseY)
-  ctx.lineTo(leftX, baseY - step)
-  ctx.lineTo(leftX + step, baseY - step)
-  ctx.lineTo(leftX + step, baseY - step * 2)
-  ctx.lineTo(leftX + step * 2, baseY - step * 2)
-  ctx.lineTo(leftX + step * 2, baseY - step * 3)
-  ctx.lineTo(leftX + step * 3, baseY - step * 3)
-  ctx.stroke()
-
-  ctx.beginPath()
-  ctx.moveTo(leftX, baseY)
-  ctx.lineTo(leftX + step * 3, baseY)
-  ctx.stroke()
-}
-
 /**
  * Universal restroom silhouette: round head + trapezoidal body, sized to fit
- * the 128 px tile. Avoids the cross-platform font / emoji rendering issues
- * that come with `fillText('WC')` or similar glyph shortcuts.
+ * the 128 px tile. Shared by both restroom categories — they're distinguished
+ * by ring/icon color and panel label (mirroring the campus map legend, which
+ * uses the same pictogram for "All Gender" and "Public"). Avoids the
+ * cross-platform font / emoji rendering issues that come with `fillText('WC')`.
  */
-function drawBathroomGlyph(
+function drawRestroomGlyph(
   ctx: CanvasRenderingContext2D,
   cx: number,
   cy: number,

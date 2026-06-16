@@ -436,6 +436,7 @@ function BuildingMeshNode({
       solidSelectedEnabled: boolean,
       solidBodyColor: string,
       solidGlowEnabled: boolean,
+      cameraMode: 'orbit' | 'map',
     ) => {
       const isSelected = selectedEntity === buildingId
       const isHovered = hoveredId === buildingId
@@ -508,12 +509,15 @@ function BuildingMeshNode({
         targetGridOpacityRef.current *= MUTED_INTERACTION_MULTIPLIERS.gridOpacity
       }
 
-      // Lift + spin only when the selection lift toggle is on. Turning it off
-      // also stops accumulating spin, and the per-frame "settle" branch eases
-      // the pivot back to its base position and nearest clean rotation.
-      targetLiftRef.current =
-        liftEnabled && isSelected ? SELECTED_BUILDING_LIFT_AMOUNT : 0
-      isSelectedFlagRef.current = liftEnabled && isSelected
+      // Lift + spin only when the selection lift toggle is on AND we're in
+      // orbit (perspective) view. In map (top-down) view the lift/spin reads as
+      // a building floating off its footprint and twisting, so we suppress it
+      // there and just show the highlight. Turning it off (or switching to map)
+      // lets the per-frame "settle" branch ease the pivot back to its base
+      // position and nearest clean rotation.
+      const liftActive = liftEnabled && isSelected && cameraMode !== 'map'
+      targetLiftRef.current = liftActive ? SELECTED_BUILDING_LIFT_AMOUNT : 0
+      isSelectedFlagRef.current = liftActive
 
       snappySolidSelectedRef.current = isSelected && solidSelectedEnabled
     },
@@ -539,6 +543,7 @@ function BuildingMeshNode({
       s.selectionSolidSelectedEnabled,
       s.selectionSolidBodyColor,
       s.selectionSolidGlowEnabled,
+      s.cameraMode,
     )
 
     return useStore.subscribe((state, prev) => {
@@ -549,7 +554,8 @@ function BuildingMeshNode({
         state.selectionMuteOthersEnabled === prev.selectionMuteOthersEnabled &&
         state.selectionSolidSelectedEnabled === prev.selectionSolidSelectedEnabled &&
         state.selectionSolidBodyColor === prev.selectionSolidBodyColor &&
-        state.selectionSolidGlowEnabled === prev.selectionSolidGlowEnabled
+        state.selectionSolidGlowEnabled === prev.selectionSolidGlowEnabled &&
+        state.cameraMode === prev.cameraMode
       ) {
         return
       }
@@ -561,6 +567,7 @@ function BuildingMeshNode({
         state.selectionSolidSelectedEnabled,
         state.selectionSolidBodyColor,
         state.selectionSolidGlowEnabled,
+        state.cameraMode,
       )
     })
   }, [computeTargets])

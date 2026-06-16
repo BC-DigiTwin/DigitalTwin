@@ -15,17 +15,17 @@ import { useClickDragThreshold } from '../../hooks/useClickDragThreshold'
  * Visible geometry constants — tuned to read on the campus greybox without
  * dominating buildings. Kept here so a single edit changes every marker.
  */
-const RING_INNER = 0.95
-const RING_OUTER = 1.45
+const RING_INNER = 1.05
+const RING_OUTER = 1.7
 const RING_SEGMENTS = 64
 const BEAM_HEIGHT = 6
-const BEAM_RADIUS_BOTTOM = 0.12
-const BEAM_RADIUS_TOP = 0.04
+const BEAM_RADIUS_BOTTOM = 0.14
+const BEAM_RADIUS_TOP = 0.045
 const BEAM_SEGMENTS = 16
-const ICON_SIZE = 1.4
-const ICON_Y = 3.4
+const ICON_SIZE = 1.85
+const ICON_Y = 3.6
 /** Cylinder hit-box that wraps the entire marker for forgiving click targets. */
-const PICKER_RADIUS = 1.6
+const PICKER_RADIUS = 1.9
 const PICKER_HEIGHT = 7
 
 /* ── Shared beam shader: vertical alpha gradient (additive) ──────────── */
@@ -75,6 +75,11 @@ interface WaypointMarkerProps {
   /** Pre-snapped Y for the ground floor of the marker. */
   yFloor: number
   state: WaypointVisualState
+  /**
+   * Uniform scale for the whole marker. Map view passes a value > 1 so pins
+   * stay legible when the orthographic camera frames the entire campus.
+   */
+  markerScale?: number
   /** Fired after a click that passes the click-vs-drag threshold check. */
   onSelect: (waypointId: string) => void
 }
@@ -90,7 +95,10 @@ interface WaypointMarkerProps {
  * picker mesh (so a raycast hit can resolve the id directly).
  */
 export const WaypointMarker = forwardRef<THREE.Group, WaypointMarkerProps>(
-  function WaypointMarker({ waypoint, yFloor, state, onSelect }, forwardedRef) {
+  function WaypointMarker(
+    { waypoint, yFloor, state, markerScale = 1, onSelect },
+    forwardedRef,
+  ) {
     const groupRef = useRef<THREE.Group>(null)
     const ringRef = useRef<THREE.Mesh>(null)
     const beamMatRef = useRef<THREE.ShaderMaterial>(null)
@@ -216,6 +224,7 @@ export const WaypointMarker = forwardRef<THREE.Group, WaypointMarkerProps>(
       <group
         ref={groupRef}
         position={[waypoint.x, yFloor, waypoint.z]}
+        scale={markerScale}
         name={`Waypoint:${waypoint.id}`}
       >
         {/* Ground ring — flat, soft glow. depthWrite=false so the beam reads through it. */}
