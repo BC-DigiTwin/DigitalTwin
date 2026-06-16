@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:next": "next dev",
+    "dev:all": "npx --yes concurrently -k -n next,vite -c blue,green \"npm run dev:next\" \"npm run dev\"",
+    "dev:next": "node scripts/assert-port-3000-free.mjs && next dev -p 3000",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",

@@ -11,6 +11,215 @@ type SidePanelProps = {
 /** Keep in sync with `digital-twin-panel-out` in `index.css` (+ buffer). */
 const PANEL_EXIT_MS = 380
 
+const DEFAULT_HERO_IMAGE =
+  'https://twin-campus-assets.s3.us-east-2.amazonaws.com/default_hero.jpg'
+
+function handleHeroImageError(e: React.SyntheticEvent<HTMLImageElement>) {
+  e.currentTarget.onerror = null
+  e.currentTarget.src = DEFAULT_HERO_IMAGE
+}
+
+function isBlobUrl(src: string) {
+  return src.startsWith('blob:')
+}
+
+/**
+ * Download an image and report byte progress (0–1) when the server sends
+ * `Content-Length`. Falls back to XHR, then a plain `<img>` load.
+ */
+async function loadImageWithProgress(
+  url: string,
+  onProgress: (progress: number) => void,
+): Promise<string> {
+  onProgress(0)
+
+  try {
+    return await fetchImageWithProgress(url, onProgress)
+  } catch {
+    try {
+      return await xhrImageWithProgress(url, onProgress)
+    } catch {
+      return loadImageViaElement(url, onProgress)
+    }
+  }
+}
+
+async function fetchImageWithProgress(
+  url: string,
+  onProgress: (progress: number) => void,
+): Promise<string> {
+  const response = await fetch(url)
+  if (!response.ok) {
+    throw new Error(`fetch failed: ${response.status}`)
+  }
+
+  const contentLength = response.headers.get('content-length')
+  const total = contentLength ? Number.parseInt(contentLength, 10) : 0
+
+  if (!response.body || !Number.isFinite(total) || total <= 0) {
+    const blob = await response.blob()
+    onProgress(1)
+    return URL.createObjectURL(blob)
+  }
+
+  const reader = response.body.getReader()
+  const chunks: BlobPart[] = []
+  let loaded = 0
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    if (value) {
+      chunks.push(value)
+      loaded += value.length
+      onProgress(Math.min(loaded / total, 0.99))
+    }
+  }
+
+  const blob = new Blob(chunks, {
+    type: response.headers.get('content-type') ?? 'image/jpeg',
+  })
+  onProgress(1)
+  return URL.createObjectURL(blob)
+}
+
+function xhrImageWithProgress(
+  url: string,
+  onProgress: (progress: number) => void,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('GET', url)
+    xhr.responseType = 'blob'
+    xhr.onprogress = (event) => {
+      if (event.lengthComputable && event.total > 0) {
+        onProgress(Math.min(event.loaded / event.total, 0.99))
+      }
+    }
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        onProgress(1)
+        resolve(URL.createObjectURL(xhr.response))
+        return
+      }
+      reject(new Error(`xhr failed: ${xhr.status}`))
+    }
+    xhr.onerror = () => reject(new Error('xhr network error'))
+    xhr.send()
+  })
+}
+
+/** Last resort when CORS blocks byte-level progress — bar creeps, then completes on load. */
+function loadImageViaElement(
+  url: string,
+  onProgress: (progress: number) => void,
+): Promise<string> {
+  return new Promise((resolve) => {
+    let creep = 0
+    const tick = window.setInterval(() => {
+      creep = Math.min(creep + 0.05, 0.9)
+      onProgress(creep)
+    }, 100)
+
+    const img = new Image()
+    img.onload = () => {
+      window.clearInterval(tick)
+      onProgress(1)
+      resolve(url)
+    }
+    img.onerror = () => {
+      window.clearInterval(tick)
+      onProgress(1)
+      resolve(DEFAULT_HERO_IMAGE)
+    }
+    img.src = url
+  })
+}
+
+function BuildingHeroImage({
+  buildingId,
+  imageUrl,
+  alt,
+}: {
+  buildingId: string
+  imageUrl: string | null
+  alt: string
+}) {
+  const blobUrlRef = useRef<string | null>(null)
+  const [displaySrc, setDisplaySrc] = useState('')
+  const [isLoading, setIsLoading] = useState(true)
+  const [progress, setProgress] = useState(0)
+
+  useEffect(() => {
+    const src = imageUrl || DEFAULT_HERO_IMAGE
+    let cancelled = false
+
+    if (blobUrlRef.current && isBlobUrl(blobUrlRef.current)) {
+      URL.revokeObjectURL(blobUrlRef.current)
+      blobUrlRef.current = null
+    }
+
+    setIsLoading(true)
+    setProgress(0)
+
+    void loadImageWithProgress(src, (value) => {
+      if (!cancelled) setProgress(value)
+    }).then((resolvedSrc) => {
+      if (cancelled) {
+        if (isBlobUrl(resolvedSrc)) URL.revokeObjectURL(resolvedSrc)
+        return
+      }
+      if (isBlobUrl(resolvedSrc)) blobUrlRef.current = resolvedSrc
+      setDisplaySrc(resolvedSrc)
+      setIsLoading(false)
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [buildingId, imageUrl])
+
+  useEffect(() => {
+    return () => {
+      if (blobUrlRef.current && isBlobUrl(blobUrlRef.current)) {
+        URL.revokeObjectURL(blobUrlRef.current)
+      }
+    }
+  }, [])
+
+  const progressPercent = Math.round(progress * 100)
+
+  return (
+    <div className="relative aspect-4/3 w-full overflow-hidden rounded-lg bg-white/5 ring-1 ring-white/10">
+      {isLoading ? (
+        <div
+          className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6"
+          aria-live="polite"
+          aria-busy="true"
+          aria-label={`Loading building image, ${progressPercent} percent`}
+        >
+          <div className="w-full overflow-hidden rounded-full bg-white/15">
+            <div
+              className="h-1.5 rounded-full bg-white/85 transition-[width] duration-150 ease-out"
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+          <span className="text-xs font-medium tabular-nums text-white/55">
+            {progressPercent}%
+          </span>
+        </div>
+      ) : (
+        <img
+          src={displaySrc}
+          alt={alt}
+          className="aspect-4/3 w-full object-cover"
+          onError={handleHeroImageError}
+        />
+      )}
+    </div>
+  )
+}
+
 function slugForDomKey(label: string, index: number) {
   const base = label
     .toLowerCase()
@@ -94,19 +303,11 @@ export function SidePanel({ buildingData, onClose }: SidePanelProps) {
         >
           X
         </button>
-        {image_url ? (
-          <img
-            src={image_url}
-            alt={name ?? 'Building'}
-            className="aspect-4/3 w-full rounded-lg object-cover ring-1 ring-white/10 transition-opacity duration-500"
-          />
-        ) : (
-          <div className="flex aspect-4/3 w-full items-center justify-center rounded-lg bg-white/5 ring-1 ring-white/10 ring-dashed transition-colors duration-300">
-            <span className="px-4 text-center text-xs uppercase tracking-wider text-white/40">
-              Photo coming soon
-            </span>
-          </div>
-        )}
+        <BuildingHeroImage
+          buildingId={buildingData.id}
+          imageUrl={image_url}
+          alt={name ?? 'Building'}
+        />
       </div>
 
       <header className="shrink-0 border-b border-white/10 pb-4 transition-opacity duration-300">
