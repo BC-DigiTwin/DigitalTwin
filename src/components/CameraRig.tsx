@@ -5,6 +5,7 @@ import * as THREE from 'three'
 import gsap from 'gsap'
 
 import { useStore } from '../store/useStore'
+import { cameraHeading } from '../utils/cameraHeading'
 import {
   SELECTED_BUILDING_LIFT_AMOUNT,
   TERRAIN_GROUND_PLANE_BOUNDS,
@@ -70,6 +71,14 @@ export const DEFAULT_CAMERA_SETTINGS: CameraSettings = {
 /**
  * Apply the correct OrbitControls mapping for the given camera mode.
  * Must be called *after* a GSAP transition completes (inside `onComplete`).
+ *
+ * Bindings mirror Google Maps so traversal feels familiar on a trackpad and a
+ * mouse alike — drag pans, scroll/pinch zooms, rotation is a secondary gesture:
+ *   • Map (top-down) — left-drag / one-finger PANS, wheel / two-finger scroll
+ *     and pinch ZOOM. Rotation is disabled (meaningless top-down).
+ *   • Orbit — left-drag / one-finger PANS (same as Maps); rotate/tilt is the
+ *     secondary gesture: right-drag, Ctrl-drag (or Shift-drag — see mount), or
+ *     a two-finger twist. Wheel / two-finger scroll zoom via the smooth-zoom loop.
  */
 function applyControlMapping(
   controls: ThreeOrbitControls,
@@ -81,12 +90,30 @@ function applyControlMapping(
     controls.minPolarAngle = 0
     controls.maxPolarAngle = 0
     controls.enableZoom = true
+    controls.mouseButtons = {
+      LEFT: THREE.MOUSE.PAN,
+      MIDDLE: THREE.MOUSE.DOLLY,
+      RIGHT: THREE.MOUSE.PAN,
+    }
+    controls.touches = {
+      ONE: THREE.TOUCH.PAN,
+      TWO: THREE.TOUCH.DOLLY_PAN,
+    }
   } else {
     controls.enableRotate = true
     controls.screenSpacePanning = false
     controls.minPolarAngle = 0
     controls.maxPolarAngle = Math.PI
     controls.enableZoom = true
+    controls.mouseButtons = {
+      LEFT: THREE.MOUSE.PAN,
+      MIDDLE: THREE.MOUSE.DOLLY,
+      RIGHT: THREE.MOUSE.ROTATE,
+    }
+    controls.touches = {
+      ONE: THREE.TOUCH.PAN,
+      TWO: THREE.TOUCH.DOLLY_ROTATE,
+    }
   }
 
   controls.update()
@@ -150,6 +177,22 @@ const BUILDING_FOCUS_DURATION_MULT = 0.45
 /** Map: multiply fitted zoom by this (<1 = zoom out more) for breathing room. */
 const BUILDING_FOCUS_MAP_ZOOM_FRAC = 0.82
 
+/* ── Waypoint fly-to tuning ────────────────────────────────────────── */
+
+/** Orbit stand-off distance (XZ) from the waypoint. Kept generous so a single
+ *  marker frames with surrounding context instead of filling the screen. */
+const WAYPOINT_FLYTO_DISTANCE = 100
+/** Orbit eye height above the waypoint. */
+const WAYPOINT_FLYTO_HEIGHT = 72
+/** Map-mode zoom when flying to a single waypoint (gentle — only zooms in if
+ *  the current view is wider than this). */
+const WAYPOINT_FLYTO_MAP_ZOOM = 1.0
+
+/* ── Reset-to-top-down tuning ──────────────────────────────────────── */
+
+/** Padding multiplier so the whole campus fits with breathing room on reset. */
+const RESET_FIT_MARGIN = 1.12
+
 /**
  * Perspective clip planes for the campus footprint (~900 m diagonal).
  * A tight `far` (e.g. 1000) cuts geometry when orbiting/zooming out and reads
@@ -158,6 +201,64 @@ const BUILDING_FOCUS_MAP_ZOOM_FRAC = 0.82
  */
 const PERSP_CLIP_NEAR = 0.01
 const PERSP_CLIP_FAR = 10_000
+
+/* ── Inertial zoom (custom, momentum-based) ────────────────────────────
+ * OrbitControls applies wheel dolly instantly (undamped), which feels jumpy on
+ * a trackpad and stops dead the moment the wheel goes quiet. Instead we treat
+ * the wheel as an impulse on a zoom *velocity* (in log space): each frame
+ * integrates the velocity into the camera distance, then applies friction so
+ * the zoom carries momentum and glides to a smooth stop — framerate-independent
+ * and consistent across mouse + trackpad.
+ */
+
+/** Velocity added per pixel of wheel/scroll (log space). Higher = faster zoom. */
+const ZOOM_WHEEL_IMPULSE = 0.016
+/**
+ * Extra zoom strength for a trackpad pinch. Pinch arrives as a `ctrlKey` wheel
+ * event with small per-event deltas, so it needs a boost to feel as fast as a
+ * mouse wheel / two-finger scroll.
+ */
+const ZOOM_PINCH_MULTIPLIER = 2.5
+/** Velocity decay (1/s). Lower = longer coast; higher = quicker stop. */
+const ZOOM_FRICTION = 6.5
+/** Clamp on |zoom velocity| so a fast trackpad flick can't run away. */
+const ZOOM_MAX_SPEED = 8
+/** Perspective dolly distance clamps (world units). */
+const ZOOM_MIN_DIST = 3
+const ZOOM_MAX_DIST = 2200
+/** Orthographic zoom clamps. */
+const ZOOM_MIN_ORTHO = 0.04
+const ZOOM_MAX_ORTHO = 40
+
+const _zoomOffset = new THREE.Vector3()
+
+/* ── Idle cinematic auto-rotate ────────────────────────────────────────
+ * After a long stretch with no user input (and nothing selected) the orbit
+ * camera slowly sweeps around the campus so the app looks alive on a projector
+ * between interactions. Any input cancels it instantly (see interaction
+ * tracking in the mount effect). Only runs in orbit mode — rotating the
+ * north-up map would defeat the "straight" map view.
+ */
+/** Idle time before auto-rotate kicks in (ms). */
+const AUTO_ROTATE_IDLE_MS = 10_000
+/** Sweep speed (radians/sec) once fully ramped in. */
+const AUTO_ROTATE_SPEED = 0.06
+/** Seconds to ease the sweep up to full speed so it starts imperceptibly. */
+const AUTO_ROTATE_RAMP_S = 2.5
+
+const _autoRotateOffset = new THREE.Vector3()
+
+/* ── Compass heading ───────────────────────────────────────────────────
+ * Writes the screen-space angle of world-north into a shared singleton each
+ * frame so the HTML compass overlay can point correctly without React churn.
+ */
+const _northDir = new THREE.Vector3()
+const _camQuatInv = new THREE.Quaternion()
+
+function writeCameraHeading(cam: THREE.Object3D): void {
+  _northDir.set(0, 0, -1).applyQuaternion(_camQuatInv.copy(cam.quaternion).invert())
+  cameraHeading.current = Math.atan2(_northDir.x, _northDir.y)
+}
 
 /**
  * Fills `outBox` with the union of world bounds for meshes tagged
@@ -383,6 +484,8 @@ export function CameraRig({
   const size = useThree((s) => s.size)
   const scene = useThree((s) => s.scene)
   const selectedEntity = useStore((s) => s.selectedEntity)
+  const selectedWaypointId = useStore((s) => s.selectedWaypointId)
+  const cameraResetNonce = useStore((s) => s.cameraResetNonce)
 
   const { mapHeight, mapViewSize, orbitFov, damping } = settings
 
@@ -393,6 +496,10 @@ export function CameraRig({
   const controlsRef = useRef<ThreeOrbitControls | null>(null)
   const prevModeRef = useRef<CameraMode>(mode)
   const gsapCtxRef = useRef<gsap.Context | null>(null)
+  /** Zoom velocity (log units/sec) integrated + decayed by the zoom loop. */
+  const zoomVelRef = useRef(0)
+  /** Timestamp (performance.now) of the last user interaction — drives idle auto-rotate. */
+  const lastInteractionRef = useRef(performance.now())
 
   /** Preserved azimuthal angle so Map → Orbit restores the same view. */
   const azimuthRef = useRef<number>(
@@ -439,19 +546,105 @@ export function CameraRig({
     controls.enableDamping = true
     controls.dampingFactor = damping
     controls.rotateSpeed = 0.5
+    controls.enablePan = true
+    controls.panSpeed = 1.1
+    // Wheel zoom is handled by a custom damped loop (see the wheel interceptor
+    // below + useFrame); these clamps bound both the smooth zoom and any
+    // programmatic moves so you can't dolly through the ground or into orbit.
+    controls.minDistance = ZOOM_MIN_DIST
+    controls.maxDistance = ZOOM_MAX_DIST
+    controls.minZoom = ZOOM_MIN_ORTHO
+    controls.maxZoom = ZOOM_MAX_ORTHO
 
     applyControlMapping(controls, mode)
 
+    // Google-Maps-style "hold to rotate": while Ctrl (or Shift) is down,
+    // left-drag rotates/tilts instead of panning, so trackpad users can orbit a
+    // building without a right-click. Ctrl-drag matches Maps/Earth. No-op in map
+    // mode (rotation is disabled there). Reading the event's modifier flags
+    // keeps it correct when keys overlap; `blur` guards against a missed keyup
+    // (e.g. Cmd-Tab) leaving it stuck.
+    const setLeftDragRotate = (rotate: boolean) => {
+      if (!controls.enableRotate) return
+      controls.mouseButtons.LEFT = rotate
+        ? THREE.MOUSE.ROTATE
+        : THREE.MOUSE.PAN
+    }
+    const onModifierChange = (e: KeyboardEvent) => {
+      setLeftDragRotate(e.ctrlKey || e.shiftKey)
+    }
+    const onWindowBlur = () => setLeftDragRotate(false)
+    window.addEventListener('keydown', onModifierChange)
+    window.addEventListener('keyup', onModifierChange)
+    window.addEventListener('blur', onWindowBlur)
+
+    // Custom smooth zoom: intercept wheel in the CAPTURE phase on window so we
+    // run *before* OrbitControls' own (undamped) bubble-phase handler and can
+    // stop it. Only canvas-targeted wheels are taken, so HTML panels (Leva,
+    // waypoints) keep their native scrolling. `passive:false` lets us
+    // preventDefault the browser's pinch/page zoom.
+    const onWheelCapture = (e: WheelEvent) => {
+      if (e.target !== gl.domElement) return
+      const c = controlsRef.current
+      if (!c || !c.enabled) return
+      lastInteractionRef.current = performance.now()
+      e.preventDefault()
+      e.stopPropagation()
+      let dy = e.deltaY
+      if (e.deltaMode === 1) dy *= 16
+      else if (e.deltaMode === 2) dy *= 100
+      // Trackpad pinch comes through as a ctrlKey wheel with tiny deltas — give
+      // it extra strength so pinch-to-zoom is as fast as wheel/scroll.
+      const impulse = e.ctrlKey
+        ? ZOOM_WHEEL_IMPULSE * ZOOM_PINCH_MULTIPLIER
+        : ZOOM_WHEEL_IMPULSE
+      // Add impulse to the zoom velocity. Negative dy (scroll up / pinch open)
+      // → negative velocity → distance shrinks → zoom in. Stacking events
+      // build speed for a faster, longer glide.
+      zoomVelRef.current = THREE.MathUtils.clamp(
+        zoomVelRef.current + dy * impulse,
+        -ZOOM_MAX_SPEED,
+        ZOOM_MAX_SPEED,
+      )
+    }
+    window.addEventListener('wheel', onWheelCapture, {
+      passive: false,
+      capture: true,
+    })
+
+    // Idle auto-rotate cancellation: any pointer/keyboard input or the start of
+    // a drag resets the idle clock so the cinematic sweep only runs when the
+    // user has genuinely walked away.
+    const markInteraction = () => {
+      lastInteractionRef.current = performance.now()
+    }
+    gl.domElement.addEventListener('pointerdown', markInteraction)
+    window.addEventListener('keydown', markInteraction)
+    controls.addEventListener('start', markInteraction)
+
     controlsRef.current = controls
+    // Register the controls in the R3F store so consumers (e.g. the waypoint
+    // drag gizmo's <TransformControls>) can find and pause them while dragging.
+    // Without this, `useThree(s => s.controls)` is null and a waypoint drag
+    // fights camera orbit/pan.
+    set({ controls: controls as unknown as THREE.EventDispatcher })
     gsapCtxRef.current = gsap.context(() => {})
 
     return () => {
       gsapCtxRef.current?.revert()
       gsapCtxRef.current = null
+      window.removeEventListener('keydown', onModifierChange)
+      window.removeEventListener('keyup', onModifierChange)
+      window.removeEventListener('blur', onWindowBlur)
+      window.removeEventListener('wheel', onWheelCapture, true)
+      gl.domElement.removeEventListener('pointerdown', markInteraction)
+      window.removeEventListener('keydown', markInteraction)
+      controls.removeEventListener('start', markInteraction)
       const c = controlsRef.current
       const p = perspCamRef.current
       const o = orthoCamRef.current
       if (c && p && o) killBuildingFocusTweens(c, p, o)
+      set({ controls: null })
       controls.dispose()
       controlsRef.current = null
     }
@@ -493,9 +686,71 @@ export function CameraRig({
     controls.dampingFactor = damping
   }, [damping])
 
-  /* ── Per-frame controls update (needed for damping) ─────────── */
-  useFrame(() => {
-    controlsRef.current?.update()
+  /* ── Per-frame: inertial zoom + controls update ─────────────── */
+  useFrame((_, delta) => {
+    const controls = controlsRef.current
+    if (!controls) return
+
+    const dt = Math.min(delta, 0.1)
+
+    // Skip custom zoom while a programmatic move owns the camera (controls
+    // disabled during GSAP transitions / focus); drop momentum so it doesn't
+    // fight the animation when control returns.
+    if (!controls.enabled) {
+      zoomVelRef.current = 0
+      controls.update()
+      writeCameraHeading(controls.object)
+      return
+    }
+
+    let vel = zoomVelRef.current
+    if (Math.abs(vel) > 1e-4) {
+      // Integrate this frame's velocity in log space → multiplicative scale.
+      const scale = Math.exp(vel * dt)
+      const cam = controls.object
+
+      if ((cam as THREE.PerspectiveCamera).isPerspectiveCamera) {
+        _zoomOffset.copy(cam.position).sub(controls.target)
+        const rawLen = _zoomOffset.length() * scale
+        const len = THREE.MathUtils.clamp(rawLen, ZOOM_MIN_DIST, ZOOM_MAX_DIST)
+        // Bleed off momentum when we hit a limit so it doesn't push the wall.
+        if (len !== rawLen) vel = 0
+        _zoomOffset.setLength(len)
+        cam.position.copy(controls.target).add(_zoomOffset)
+      } else if ((cam as THREE.OrthographicCamera).isOrthographicCamera) {
+        const oc = cam as THREE.OrthographicCamera
+        const rawZoom = oc.zoom / scale
+        const z = THREE.MathUtils.clamp(rawZoom, ZOOM_MIN_ORTHO, ZOOM_MAX_ORTHO)
+        if (z !== rawZoom) vel = 0
+        oc.zoom = z
+        oc.updateProjectionMatrix()
+      }
+
+      // Friction: exponential decay → smooth glide to a stop.
+      vel *= Math.exp(-ZOOM_FRICTION * dt)
+      if (Math.abs(vel) < 1e-3) vel = 0
+      zoomVelRef.current = vel
+    }
+
+    // Idle cinematic auto-rotate (orbit only, nothing selected). Eases in from
+    // zero so the sweep starts imperceptibly rather than snapping to speed.
+    const cam = controls.object
+    const isOrbitCam = (cam as THREE.PerspectiveCamera).isPerspectiveCamera
+    if (isOrbitCam && Math.abs(zoomVelRef.current) < 1e-4) {
+      const s = useStore.getState()
+      const idleFor =
+        performance.now() - lastInteractionRef.current - AUTO_ROTATE_IDLE_MS
+      if (idleFor > 0 && !s.selectedEntity && !s.selectedWaypointId) {
+        const ramp = Math.min(idleFor / 1000 / AUTO_ROTATE_RAMP_S, 1)
+        const angle = AUTO_ROTATE_SPEED * ramp * dt
+        _autoRotateOffset.copy(cam.position).sub(controls.target)
+        _autoRotateOffset.applyAxisAngle(_worldUp, angle)
+        cam.position.copy(controls.target).add(_autoRotateOffset)
+      }
+    }
+
+    controls.update()
+    writeCameraHeading(controls.object)
   })
 
   /* ── Transition: GSAP "handoff" on mode change ──────────────── */
@@ -510,7 +765,13 @@ export function CameraRig({
     if (!ctx || !controls || !perspCam || !orthoCam) return
 
     // Read transition-time values from ref (always fresh).
-    const { mapHeight: height, transitionSpeed: duration } = settingsRef.current
+    const { mapHeight: height, transitionSpeed: duration, mapViewSize } =
+      settingsRef.current
+    // Used to match the perspective ↔ ortho *scale* at the handoff so neither
+    // direction "pops" to a different zoom level. The perspective vertical
+    // extent at distance d is 2·d·tan(fov/2); the ortho vertical extent is
+    // 2·mapViewSize/zoom. Equating the two gives the matching zoom/height.
+    const tanHalfFov = Math.tan(THREE.MathUtils.degToRad(perspCam.fov) / 2)
 
     // Kill previous transition & create a fresh GSAP context.
     ctx.revert()
@@ -526,22 +787,39 @@ export function CameraRig({
       /* ── Orbit → Map ───────────────────────────────────────── */
       const dx = perspCam.position.x - target.x
       const dz = perspCam.position.z - target.z
-      const azimuth = Math.atan2(dx, dz)
-      azimuthRef.current = azimuth
+      // Remember the orbit heading so returning to orbit restores it — but the
+      // map itself is always rendered straight (north-up), not tilted to the
+      // orbit azimuth, so the campus grid sits square to the screen.
+      azimuthRef.current = Math.atan2(dx, dz)
 
-      orthoCam.position.set(target.x, height, target.z)
-      orthoCam.up.set(-Math.sin(azimuth), 0, -Math.cos(azimuth))
+      // Preserve the *current* view scale across the swap so the map doesn't
+      // suddenly zoom in/out: fly the perspective straight overhead to a height
+      // equal to its current distance-to-target (same apparent scale), and set
+      // the ortho zoom to match. dEff is clamped so a very close/far orbit
+      // still lands at a sane map height.
+      const dEff = THREE.MathUtils.clamp(
+        perspCam.position.distanceTo(target),
+        20,
+        800,
+      )
+      const orthoPosY = Math.max(height, dEff + 10)
+
+      orthoCam.position.set(target.x, orthoPosY, target.z)
+      orthoCam.up.set(0, 0, -1)
       orthoCam.lookAt(target.x, 0, target.z)
-      orthoCam.far = height * 2
+      orthoCam.far = orthoPosY * 2
       orthoCam.updateProjectionMatrix()
 
-      const flyX = target.x + Math.sin(azimuth) * POLE_EPSILON
-      const flyZ = target.z + Math.cos(azimuth) * POLE_EPSILON
+      // Fly to directly above the target ending north-up, so the perspective
+      // rotates to "straight" as it rises and the ortho handoff is seamless.
+      const flyX = target.x
+      const flyZ = target.z + POLE_EPSILON
+      const flyHeight = dEff
 
       freshCtx.add(() => {
         gsap.to(perspCam.position, {
           x: flyX,
-          y: height,
+          y: flyHeight,
           z: flyZ,
           duration,
           ease: 'power2.inOut',
@@ -549,6 +827,17 @@ export function CameraRig({
             perspCam.lookAt(target)
           },
           onComplete() {
+            // Match ortho zoom to the perspective's apparent scale at flyHeight
+            // so the camera swap is seamless (no scale pop) and preserves the
+            // framing we had in orbit.
+            const matchZoom = mapViewSize / (dEff * tanHalfFov)
+            orthoCam.zoom = THREE.MathUtils.clamp(
+              matchZoom,
+              ZOOM_MIN_ORTHO,
+              ZOOM_MAX_ORTHO,
+            )
+            orthoCam.updateProjectionMatrix()
+
             set({ camera: orthoCam })
             controls.object = orthoCam
             controls.target.copy(target)
@@ -562,11 +851,16 @@ export function CameraRig({
       /* ── Map → Orbit ───────────────────────────────────────── */
       const azimuth = azimuthRef.current
 
-      perspCam.position.set(
-        target.x + Math.sin(azimuth) * POLE_EPSILON,
-        height,
-        target.z + Math.cos(azimuth) * POLE_EPSILON,
-      )
+      // Start the perspective at the height whose apparent scale matches the
+      // ortho's *current* zoom, so the first perspective frame lines up with
+      // what the top-down view was showing (seamless), then ease out to orbit.
+      const matchHeight = mapViewSize / (Math.max(orthoCam.zoom, 1e-3) * tanHalfFov)
+      const startHeight = THREE.MathUtils.clamp(matchHeight, 20, height * 4)
+
+      // Start directly above the target, north-up (matches the straight map),
+      // then ease out to the remembered orbit heading — the camera smoothly
+      // rotates from "straight" back into the orbit view.
+      perspCam.position.set(target.x, startHeight, target.z + POLE_EPSILON)
       perspCam.up.set(0, 1, 0)
       perspCam.lookAt(target)
       perspCam.updateProjectionMatrix()
@@ -629,6 +923,9 @@ export function CameraRig({
       }
       return () => {
         killBuildingFocusTweens(controls, perspCam, orthoCam)
+        // Re-enable in case a focus move was interrupted by a deselect mid-flight
+        // (otherwise controls could be left disabled and the camera "frozen").
+        controls.enabled = true
       }
     }
 
@@ -751,9 +1048,18 @@ export function CameraRig({
         const dx = _buildingFocusBox.max.x - _buildingFocusBox.min.x
         const dz = _buildingFocusBox.max.z - _buildingFocusBox.min.z
         const footprint = Math.max(dx, dz, 0.01)
-        const margin = 1.22
+        // Frame the building with generous context (larger margin = more
+        // surroundings visible), then cap the zoom-in so clicking a small
+        // building doesn't rocket the map all the way in. We never zoom in more
+        // than ~1.7× the current level, with a modest absolute ceiling.
+        const margin = 1.8
         const fitZoom = (2 * mapViewSize) / (footprint * margin)
-        const targetZoom = THREE.MathUtils.clamp(fitZoom * BUILDING_FOCUS_MAP_ZOOM_FRAC, 0.08, 14)
+        const currentZoom = cam.zoom
+        const targetZoom = THREE.MathUtils.clamp(
+          fitZoom * BUILDING_FOCUS_MAP_ZOOM_FRAC,
+          0.08,
+          Math.min(3.2, currentZoom * 1.7),
+        )
 
         cam.updateMatrixWorld(true)
         _vRt.set(1, 0, 0).applyQuaternion(cam.quaternion).normalize()
@@ -790,6 +1096,216 @@ export function CameraRig({
       }
     }
   }, [selectedEntity, scene])
+
+  /* ── Fly to the selected waypoint (orbit + map) ───────────────── */
+  useEffect(() => {
+    if (!selectedWaypointId) {
+      // Selected waypoint cleared (reset / deletion mid-flight): make sure the
+      // controls aren't left disabled by an interrupted fly-to.
+      const c = controlsRef.current
+      if (c) c.enabled = true
+      return
+    }
+    const controls = controlsRef.current
+    const perspCam = perspCamRef.current
+    const orthoCam = orthoCamRef.current
+    if (!controls || !perspCam || !orthoCam) return
+
+    const wp = useStore
+      .getState()
+      .waypoints.find((w) => w.id === selectedWaypointId)
+    if (!wp) return
+
+    const targetX = wp.x
+    const targetZ = wp.z
+
+    killBuildingFocusTweens(controls, perspCam, orthoCam)
+    const { transitionSpeed: duration, mapHeight: height } = settingsRef.current
+    controls.enabled = false
+
+    const orthoActive = controls.object === orthoCam
+
+    if (!orthoActive) {
+      // Orbit: keep the current approach azimuth, glide to a stand-off pose.
+      const cam = perspCam
+      const dx = cam.position.x - targetX
+      const dz = cam.position.z - targetZ
+      const distXZ = Math.hypot(dx, dz)
+      let nx = 0
+      let nz = 1
+      if (distXZ >= 1e-3) {
+        nx = dx / distXZ
+        nz = dz / distXZ
+      } else {
+        nx = Math.sin(azimuthRef.current)
+        nz = Math.cos(azimuthRef.current)
+      }
+      const eyeX = targetX + nx * WAYPOINT_FLYTO_DISTANCE
+      const eyeY = WAYPOINT_FLYTO_HEIGHT
+      const eyeZ = targetZ + nz * WAYPOINT_FLYTO_DISTANCE
+
+      gsap
+        .timeline({
+          onUpdate() {
+            cam.lookAt(controls.target)
+            controls.update()
+          },
+          onComplete() {
+            const tt = controls.target
+            azimuthRef.current = Math.atan2(
+              cam.position.x - tt.x,
+              cam.position.z - tt.z,
+            )
+            controls.enabled = true
+          },
+        })
+        .to(
+          controls.target,
+          { x: targetX, y: 2, z: targetZ, duration, ease: 'power2.inOut' },
+          0,
+        )
+        .to(
+          cam.position,
+          { x: eyeX, y: eyeY, z: eyeZ, duration, ease: 'power2.inOut' },
+          0,
+        )
+    } else {
+      // Map: pan + zoom in on the waypoint, keep the top-down look.
+      const cam = orthoCam
+      gsap
+        .timeline({
+          onUpdate() {
+            cam.lookAt(controls.target.x, 0, controls.target.z)
+            cam.updateProjectionMatrix()
+            controls.update()
+          },
+          onComplete() {
+            controls.enabled = true
+          },
+        })
+        .to(
+          controls.target,
+          { x: targetX, y: 0, z: targetZ, duration, ease: 'power2.inOut' },
+          0,
+        )
+        .to(
+          cam.position,
+          { x: targetX, y: height, z: targetZ, duration, ease: 'power2.inOut' },
+          0,
+        )
+        .to(
+          cam,
+          {
+            zoom: Math.max(cam.zoom, WAYPOINT_FLYTO_MAP_ZOOM),
+            duration,
+            ease: 'power2.inOut',
+          },
+          0,
+        )
+    }
+
+    return () => {
+      if (controls && perspCam && orthoCam) {
+        killBuildingFocusTweens(controls, perspCam, orthoCam)
+      }
+    }
+  }, [selectedWaypointId])
+
+  /* ── Reset to the default top-down overview (button on top-right) ── */
+  const resetInitRef = useRef(true)
+  useEffect(() => {
+    if (resetInitRef.current) {
+      resetInitRef.current = false
+      return
+    }
+    const controls = controlsRef.current
+    const perspCam = perspCamRef.current
+    const orthoCam = orthoCamRef.current
+    if (!controls || !perspCam || !orthoCam) return
+
+    killBuildingFocusTweens(controls, perspCam, orthoCam)
+
+    const { mapHeight: height, transitionSpeed: duration, mapViewSize } =
+      settingsRef.current
+
+    const { xMin, xMax, zMin, zMax } = TERRAIN_GROUND_PLANE_BOUNDS
+    const cx = (xMin + xMax) / 2
+    const cz = (zMin + zMax) / 2
+    const spanX = Math.max(Math.abs(xMax - xMin), 1)
+    const spanZ = Math.max(Math.abs(zMax - zMin), 1)
+    const fitZoom = Math.min(
+      (2 * mapViewSize) / (spanX * RESET_FIT_MARGIN),
+      (2 * mapViewSize) / (spanZ * RESET_FIT_MARGIN),
+    )
+    const targetZoom = THREE.MathUtils.clamp(fitZoom, 0.02, 14)
+
+    controls.enabled = false
+    const wasOrbit = controls.object === perspCam
+
+    if (wasOrbit) {
+      // Fly the perspective camera straight above campus center, then hand
+      // off to the orthographic camera framed on the whole campus.
+      orthoCam.position.set(cx, height, cz)
+      orthoCam.up.set(0, 0, -1)
+      orthoCam.lookAt(cx, 0, cz)
+      orthoCam.zoom = targetZoom
+      orthoCam.far = height * 2
+      orthoCam.updateProjectionMatrix()
+
+      const flyX = cx
+      const flyZ = cz + POLE_EPSILON
+
+      gsap.to(perspCam.position, {
+        x: flyX,
+        y: height,
+        z: flyZ,
+        duration,
+        ease: 'power2.inOut',
+        onUpdate() {
+          perspCam.lookAt(cx, 0, cz)
+        },
+        onComplete() {
+          set({ camera: orthoCam })
+          controls.object = orthoCam
+          controls.target.set(cx, 0, cz)
+          applyControlMapping(controls, 'map')
+          controls.enabled = true
+          azimuthRef.current = 0
+          // Keep mode state in sync without re-triggering the transition
+          // effect: set prevMode first, then publish the store mode.
+          prevModeRef.current = 'map'
+          useStore.getState().setCameraMode('map')
+        },
+      })
+    } else {
+      // Already top-down: pan + zoom out to the campus overview, north-up.
+      const cam = orthoCam
+      cam.up.set(0, 0, -1)
+      gsap
+        .timeline({
+          onUpdate() {
+            cam.lookAt(controls.target.x, 0, controls.target.z)
+            cam.updateProjectionMatrix()
+            controls.update()
+          },
+          onComplete() {
+            controls.enabled = true
+            azimuthRef.current = 0
+          },
+        })
+        .to(
+          controls.target,
+          { x: cx, y: 0, z: cz, duration, ease: 'power2.inOut' },
+          0,
+        )
+        .to(
+          cam.position,
+          { x: cx, y: height, z: cz, duration, ease: 'power2.inOut' },
+          0,
+        )
+        .to(cam, { zoom: targetZoom, duration, ease: 'power2.inOut' }, 0)
+    }
+  }, [cameraResetNonce, set])
 
   /* ── Scene graph: both cameras always mounted ───────────────── */
   return (

@@ -13,6 +13,8 @@ import { RoadsGroup } from './components/scene/RoadsGroup'
 import { TerrainGroup } from './components/scene/TerrainGroup'
 import { StressTestGroup } from './components/scene/StressTestGroup'
 import { InstancedRimExample } from './components/scene/InstancedRimExample'
+import { WaypointsGroup } from './components/scene/WaypointsGroup'
+import { WaypointsPanel } from './components/WaypointsPanel'
 import { LoadingScreen } from './components/LoadingScreen'
 import { selectedEntitySelector, useStore, type LayerName } from './store/useStore'
 import './App.css'
@@ -24,6 +26,8 @@ import { PlaceholderBox } from './components/PlaceholderBox'
 import { useHydrateLocations } from './hooks/useHydrateLocations'
 import { SceneBackground } from './components/scene/SceneBackground'
 import { SidePanel, type BuildingApiData } from './components/SidePanel'
+import { BuildingHoverLabel } from './components/scene/BuildingHoverLabel'
+import { cameraHeading } from './utils/cameraHeading'
 import { mockBuildings } from '../lib/mockDatabase'
 import {
   SELECTION_SOLID_BODY_COLOR_DEFAULT,
@@ -51,6 +55,7 @@ function LayerToggles() {
     'Stress Test': stressTest,
     'Stress test mesh count': stressMeshCount,
     'Instanced Rim': instancedRim,
+    Waypoints: waypoints,
   } = useControls(
     'Layer Visibility',
     {
@@ -66,6 +71,7 @@ function LayerToggles() {
         render: (get) => !!get('Layer Visibility.Stress Test'),
       },
       'Instanced Rim': { value: initialRef.current.instancedRim ?? false },
+      Waypoints: { value: initialRef.current.waypoints ?? true },
     },
     { collapsed: true },
   )
@@ -76,11 +82,12 @@ function LayerToggles() {
       ['terrain', terrain],
       ['stressTest', stressTest],
       ['instancedRim', instancedRim],
+      ['waypoints', waypoints],
     ]
     for (const [layer, visible] of entries) {
       setLayerVisible(layer, visible)
     }
-  }, [buildings, terrain, stressTest, instancedRim, setLayerVisible])
+  }, [buildings, terrain, stressTest, instancedRim, waypoints, setLayerVisible])
 
   useEffect(() => {
     if (stressTest && typeof stressMeshCount === 'number') {
@@ -613,7 +620,13 @@ function CameraRigWithControls() {
       'Map Height': { value: DEFAULT_CAMERA_SETTINGS.mapHeight, min: 20, max: 200, step: 1 },
       'Map View Size': { value: DEFAULT_CAMERA_SETTINGS.mapViewSize, min: 10, max: 150, step: 1 },
       'Orbit FOV': { value: DEFAULT_CAMERA_SETTINGS.orbitFov, min: 10, max: 100, step: 1 },
-      'Transition Speed': { value: DEFAULT_CAMERA_SETTINGS.transitionSpeed, min: 0.1, max: 3.0, step: 0.05 },
+      'Transition Speed': {
+        value: DEFAULT_CAMERA_SETTINGS.transitionSpeed,
+        min: 0.4,
+        max: 4.0,
+        step: 0.05,
+        label: 'Transition (s)',
+      },
       Damping: { value: DEFAULT_CAMERA_SETTINGS.damping, min: 0.01, max: 0.5, step: 0.01 },
     },
     { collapsed: true },
@@ -703,18 +716,371 @@ function BuildingDetailsPanel() {
   )
 }
 
+/**
+ * Top-right floating camera-view cluster:
+ *
+ *   • A segmented control to switch between **Orbit** (perspective) and
+ *     **Top-down** (orthographic). Selecting a mode only changes the *angle*
+ *     of the current view — `CameraRig` animates the transition (GSAP) and
+ *     preserves the look target, so it never recenters or teleports.
+ *   • A separate **home** button that resets to the campus overview and clears
+ *     any selection (`requestCameraReset`).
+ *
+ * Both drive `CameraRig` purely through the Zustand store, so this stays a
+ * thin, presentational overlay outside the Canvas.
+ */
+function CameraViewControls() {
+  const mode = useStore((s) => s.cameraMode)
+  const setCameraMode = useStore((s) => s.setCameraMode)
+  const requestCameraReset = useStore((s) => s.requestCameraReset)
+
+  const isOrbit = mode === 'orbit'
+
+  const selectMode = (next: 'orbit' | 'map') => {
+    // No-op when already active so we never re-trigger the transition animation.
+    if (useStore.getState().cameraMode !== next) setCameraMode(next)
+  }
+
+  return (
+    <div className="fixed right-4 top-4 z-50 flex items-center gap-2">
+      <ControlsHelp />
+      <CompassIndicator />
+
+      {/* Segmented Orbit / Top-down control */}
+      <div
+        role="radiogroup"
+        aria-label="Camera view mode"
+        className="relative flex items-center rounded-full border border-white/15 bg-neutral-950/65 p-1 shadow-lg backdrop-blur-2xl"
+      >
+        {/* Sliding thumb — animates between the two segments. */}
+        <span
+          aria-hidden
+          className={`pointer-events-none absolute inset-y-1 left-1 w-[calc(50%-0.25rem)] rounded-full bg-white/15 shadow-sm ring-1 ring-white/20 transition-transform duration-200 ease-out motion-reduce:transition-none ${
+            isOrbit ? 'translate-x-0' : 'translate-x-full'
+          }`}
+        />
+        <button
+          type="button"
+          role="radio"
+          aria-checked={isOrbit}
+          onClick={() => selectMode('orbit')}
+          className={`relative z-10 flex flex-1 items-center justify-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors ${
+            isOrbit ? 'text-white' : 'text-white/55 hover:text-white/80'
+          }`}
+          title="Orbit (3D perspective) view"
+        >
+          <OrbitIcon className="h-4 w-4" />
+          Orbit
+        </button>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={!isOrbit}
+          onClick={() => selectMode('map')}
+          className={`relative z-10 flex flex-1 items-center justify-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors ${
+            !isOrbit ? 'text-white' : 'text-white/55 hover:text-white/80'
+          }`}
+          title="Map (top-down) view"
+        >
+          <TopDownIcon className="h-4 w-4" />
+          Map
+        </button>
+      </div>
+
+      {/* Home / reset to campus overview */}
+      <button
+        type="button"
+        onClick={requestCameraReset}
+        className="flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-neutral-950/65 text-white shadow-lg backdrop-blur-2xl transition hover:bg-neutral-900/85"
+        title="Reset to campus overview"
+        aria-label="Reset camera to campus overview"
+      >
+        <HomeIcon className="h-4 w-4" />
+      </button>
+    </div>
+  )
+}
+
+/**
+ * Small north indicator. The needle points to world-north on screen by reading
+ * the shared `cameraHeading` singleton in its own rAF loop and mutating the
+ * transform directly — no React re-renders per frame.
+ */
+function CompassIndicator() {
+  const needleRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    let raf = 0
+    const tick = () => {
+      const el = needleRef.current
+      if (el) el.style.transform = `rotate(${cameraHeading.current}rad)`
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [])
+
+  return (
+    <div
+      className="relative flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-neutral-950/65 shadow-lg backdrop-blur-2xl"
+      title="North"
+      aria-label="Compass — points north"
+    >
+      <div ref={needleRef} className="h-full w-full will-change-transform">
+        <svg viewBox="0 0 36 36" className="h-full w-full" aria-hidden>
+          {/* North half (red), pointing up */}
+          <path d="M18 7 L21.2 18 L18 16 L14.8 18 Z" fill="#f4647d" />
+          {/* South half (muted) */}
+          <path d="M18 29 L14.8 18 L18 20 L21.2 18 Z" fill="#ffffff66" />
+          <text
+            x="18"
+            y="6"
+            textAnchor="middle"
+            fontSize="6"
+            fontWeight="700"
+            fill="#ffffffcc"
+          >
+            N
+          </text>
+        </svg>
+      </div>
+    </div>
+  )
+}
+
+const CONTROLS_HELP_DISMISSED_KEY = 'dt-controls-help-dismissed'
+
+/**
+ * Dismissible controls cheat-sheet. Opens automatically on first run (until
+ * dismissed, persisted in localStorage) and can be reopened with the `?`
+ * button. Lives in the top-right cluster; the card is pinned top-center so it
+ * never collides with the side / waypoint panels.
+ */
+function ControlsHelp() {
+  const [open, setOpen] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(CONTROLS_HELP_DISMISSED_KEY) !== '1'
+    } catch {
+      return true
+    }
+  })
+
+  const dismiss = () => {
+    setOpen(false)
+    try {
+      localStorage.setItem(CONTROLS_HELP_DISMISSED_KEY, '1')
+    } catch {
+      /* ignore storage failures (private mode etc.) */
+    }
+  }
+
+  const rows: [string, string][] = [
+    ['Zoom', 'Scroll wheel / two-finger scroll / pinch'],
+    ['Pan', 'Left-drag / one-finger drag'],
+    ['Rotate (orbit)', 'Right-drag, or Ctrl-drag'],
+    ['Select', 'Click a building'],
+    ['View', 'O orbit · M map · H home'],
+    ['Deselect', 'Esc'],
+  ]
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-neutral-950/65 text-sm font-semibold text-white shadow-lg backdrop-blur-2xl transition hover:bg-neutral-900/85"
+        title="Controls"
+        aria-label="Show controls help"
+        aria-expanded={open}
+      >
+        ?
+      </button>
+
+      {open && (
+        <div className="fixed left-1/2 top-4 z-50 w-[min(92vw,28rem)] -translate-x-1/2 rounded-2xl border border-white/15 bg-neutral-950/70 p-4 text-white shadow-2xl backdrop-blur-2xl">
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="text-sm font-semibold tracking-tight">Controls</h2>
+            <button
+              type="button"
+              onClick={dismiss}
+              className="rounded-md bg-white/10 px-2.5 py-1 text-xs font-medium ring-1 ring-white/15 transition hover:bg-white/20"
+            >
+              Got it
+            </button>
+          </div>
+          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs">
+            {rows.map(([keys, action]) => (
+              <div key={keys} className="contents">
+                <dt className="font-medium text-white/90">{keys}</dt>
+                <dd className="text-white/55">{action}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      )}
+    </>
+  )
+}
+
+/**
+ * Global keyboard shortcuts (HTML side, outside the Canvas):
+ *   Esc — clear building + waypoint selection
+ *   O / M — Orbit / Map view
+ *   H — Home (reset to campus overview)
+ * Ignored while typing in an input/textarea/select so panel fields keep working.
+ */
+function KeyboardShortcuts() {
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+      const target = e.target as HTMLElement | null
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return
+      }
+
+      const s = useStore.getState()
+      switch (e.key) {
+        case 'Escape':
+          if (s.selectedEntity) s.setSelectedEntity(null)
+          if (s.selectedWaypointId) s.setSelectedWaypointId(null)
+          break
+        case 'o':
+        case 'O':
+          if (s.cameraMode !== 'orbit') s.setCameraMode('orbit')
+          break
+        case 'm':
+        case 'M':
+          if (s.cameraMode !== 'map') s.setCameraMode('map')
+          break
+        case 'h':
+        case 'H':
+          s.requestCameraReset()
+          break
+        default:
+          break
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+
+  return null
+}
+
+function OrbitIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className={className} aria-hidden>
+      <circle cx="10" cy="10" r="3" fill="currentColor" />
+      <ellipse
+        cx="10"
+        cy="10"
+        rx="8"
+        ry="3.4"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        transform="rotate(-28 10 10)"
+      />
+    </svg>
+  )
+}
+
+function HomeIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className={className} aria-hidden>
+      <path
+        d="M3.5 9.5 10 4l6.5 5.5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M5.25 8.5V15.5h9.5V8.5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function TopDownIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className={className} aria-hidden>
+      <rect
+        x="3"
+        y="3"
+        width="14"
+        height="14"
+        rx="2"
+        stroke="currentColor"
+        strokeWidth="1.5"
+      />
+      <path
+        d="M10 6.5v7M6.5 10h7"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
 export default function App() {
   useHydrateLocations()
+
+  // Tracks the most recent pointer-down on the canvas so `onPointerMissed`
+  // (which also fires after camera drags) can tell a genuine click on empty
+  // space from the end of an orbit/pan drag.
+  const pointerDownRef = useRef<{ x: number; y: number; t: number } | null>(
+    null,
+  )
+
+  const handleCanvasPointerDown = (e: React.PointerEvent) => {
+    pointerDownRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      t: performance.now(),
+    }
+  }
+
+  // Click on empty space (not a building or waypoint) clears the selection.
+  // The raycaster only tests the INTERACTIVE layer, so ground/roads/sky all
+  // register as a miss. We ignore drags (camera move) via a small threshold.
+  const handleCanvasPointerMissed = (e: MouseEvent) => {
+    const down = pointerDownRef.current
+    if (!down) return
+    const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y)
+    const elapsed = performance.now() - down.t
+    if (moved > 4 || elapsed > 400) return
+
+    const s = useStore.getState()
+    // While placing/editing waypoints, leave the selection alone.
+    if (s.waypointPlacementMode) return
+    if (s.selectedEntity) s.setSelectedEntity(null)
+    if (s.selectedWaypointId) s.setSelectedWaypointId(null)
+  }
 
   return (
     <DebugWrapper>
       <div className="canvas-container">
         {/* HTML overlay — tracks drei's internal loading progress */}
         <LoadingScreen />
+        <KeyboardShortcuts />
         <BuildingDetailsPanel />
+        <CameraViewControls />
 
         <Canvas
           dpr={[1, 2]}
+          onPointerDown={handleCanvasPointerDown}
+          onPointerMissed={handleCanvasPointerMissed}
           onCreated={({ gl, raycaster }) => {
             gl.toneMapping = ACESFilmicToneMapping
             gl.outputColorSpace = SRGBColorSpace
@@ -738,6 +1104,8 @@ export default function App() {
             <TerrainGroup />
             <StressTestGroup />
             <InstancedRimExample />
+            <WaypointsGroup />
+            <BuildingHoverLabel />
 
             {/* Asset-heavy layers suspend until loaded; errors are caught
                 and surfaced via the HTML overlay (LoadingScreen).
@@ -753,6 +1121,7 @@ export default function App() {
             </AssetErrorBoundary>
           </CameraControlProvider>
         </Canvas>
+        <WaypointsPanel />
       </div>
     </DebugWrapper>
   )

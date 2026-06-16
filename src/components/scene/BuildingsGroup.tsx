@@ -9,7 +9,7 @@ import { useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { Edges, type EdgesRef } from '@react-three/drei'
 import * as THREE from 'three'
 import { damp, dampC } from 'maath/easing'
-import { useStore } from '../../store/useStore'
+import { useStore, type CampusBuilding } from '../../store/useStore'
 import { useAssetLoader } from '../../hooks/useAssetLoader'
 import { useInteractiveLayer } from '../../hooks/useInteractiveLayer'
 import { useClickDragThreshold } from '../../hooks/useClickDragThreshold'
@@ -179,6 +179,68 @@ export function collectBuildingMeshNodes(
   }
 
   return node.children.flatMap((child) => collectBuildingMeshNodes(child, nextBuilding))
+}
+
+export interface BuildingFootprint {
+  /** World-space footprint center X (meters), including the group offset. */
+  cx: number
+  /** World-space footprint center Z (meters), including the group offset. */
+  cz: number
+  /** Half-width along X (meters). */
+  halfX: number
+  /** Half-depth along Z (meters). */
+  halfZ: number
+}
+
+/**
+ * Measures the combined world-space XZ bounding box of every mesh belonging to
+ * each `building_*` id and returns its center + half-extents. Coordinates are
+ * computed relative to the GLB scene root (which matches how `BuildingsGroup`
+ * re-parents children) and then shifted by the group's world offset, so the
+ * results line up with the rendered scene. Lets callers place content (e.g.
+ * waypoints) *inside* a building's footprint instead of at guessed coords.
+ */
+export function computeBuildingFootprints(
+  scene: THREE.Object3D,
+  meshNodes: readonly BuildingMeshNode[],
+  offsetX: number,
+  offsetZ: number,
+): Map<string, BuildingFootprint> {
+  scene.updateMatrixWorld(true)
+  const sceneInverse = new THREE.Matrix4().copy(scene.matrixWorld).invert()
+  const meshMatrix = new THREE.Matrix4()
+  const meshBox = new THREE.Box3()
+  const boxes = new Map<string, THREE.Box3>()
+
+  for (const node of meshNodes) {
+    if (!/^building_/.test(node.buildingId)) continue
+    const geom = node.mesh.geometry
+    if (!geom.boundingBox) geom.computeBoundingBox()
+    if (!geom.boundingBox) continue
+
+    meshMatrix.multiplyMatrices(sceneInverse, node.mesh.matrixWorld)
+    meshBox.copy(geom.boundingBox).applyMatrix4(meshMatrix)
+
+    const existing = boxes.get(node.buildingId)
+    if (existing) existing.union(meshBox)
+    else boxes.set(node.buildingId, meshBox.clone())
+  }
+
+  const center = new THREE.Vector3()
+  const size = new THREE.Vector3()
+  const out = new Map<string, BuildingFootprint>()
+  for (const [id, box] of boxes) {
+    if (box.isEmpty()) continue
+    box.getCenter(center)
+    box.getSize(size)
+    out.set(id, {
+      cx: center.x + offsetX,
+      cz: center.z + offsetZ,
+      halfX: size.x / 2,
+      halfZ: size.z / 2,
+    })
+  }
+  return out
 }
 
 const BUILDING_GRID_VERTEX_SHADER = /* glsl */ `
@@ -374,6 +436,7 @@ function BuildingMeshNode({
       solidSelectedEnabled: boolean,
       solidBodyColor: string,
       solidGlowEnabled: boolean,
+      cameraMode: 'orbit' | 'map',
     ) => {
       const isSelected = selectedEntity === buildingId
       const isHovered = hoveredId === buildingId
@@ -446,12 +509,15 @@ function BuildingMeshNode({
         targetGridOpacityRef.current *= MUTED_INTERACTION_MULTIPLIERS.gridOpacity
       }
 
-      // Lift + spin only when the selection lift toggle is on. Turning it off
-      // also stops accumulating spin, and the per-frame "settle" branch eases
-      // the pivot back to its base position and nearest clean rotation.
-      targetLiftRef.current =
-        liftEnabled && isSelected ? SELECTED_BUILDING_LIFT_AMOUNT : 0
-      isSelectedFlagRef.current = liftEnabled && isSelected
+      // Lift + spin only when the selection lift toggle is on AND we're in
+      // orbit (perspective) view. In map (top-down) view the lift/spin reads as
+      // a building floating off its footprint and twisting, so we suppress it
+      // there and just show the highlight. Turning it off (or switching to map)
+      // lets the per-frame "settle" branch ease the pivot back to its base
+      // position and nearest clean rotation.
+      const liftActive = liftEnabled && isSelected && cameraMode !== 'map'
+      targetLiftRef.current = liftActive ? SELECTED_BUILDING_LIFT_AMOUNT : 0
+      isSelectedFlagRef.current = liftActive
 
       snappySolidSelectedRef.current = isSelected && solidSelectedEnabled
     },
@@ -477,6 +543,7 @@ function BuildingMeshNode({
       s.selectionSolidSelectedEnabled,
       s.selectionSolidBodyColor,
       s.selectionSolidGlowEnabled,
+      s.cameraMode,
     )
 
     return useStore.subscribe((state, prev) => {
@@ -487,7 +554,8 @@ function BuildingMeshNode({
         state.selectionMuteOthersEnabled === prev.selectionMuteOthersEnabled &&
         state.selectionSolidSelectedEnabled === prev.selectionSolidSelectedEnabled &&
         state.selectionSolidBodyColor === prev.selectionSolidBodyColor &&
-        state.selectionSolidGlowEnabled === prev.selectionSolidGlowEnabled
+        state.selectionSolidGlowEnabled === prev.selectionSolidGlowEnabled &&
+        state.cameraMode === prev.cameraMode
       ) {
         return
       }
@@ -499,6 +567,7 @@ function BuildingMeshNode({
         state.selectionSolidSelectedEnabled,
         state.selectionSolidBodyColor,
         state.selectionSolidGlowEnabled,
+        state.cameraMode,
       )
     })
   }, [computeTargets])
@@ -786,6 +855,7 @@ export function BuildingsGroup() {
   const visible = useStore((s) => s.layers.buildings)
   const blueprint = useStore((s) => s.blueprintBuildingMaterial)
   const setSelectedBuildingId = useStore((s) => s.setSelectedEntity)
+  const setCampusBuildings = useStore((s) => s.setCampusBuildings)
   const gltf = useAssetLoader(CAMPUS_GLB_PATH)
 
   useInteractiveLayer(gltf.scene)
@@ -811,6 +881,34 @@ export function BuildingsGroup() {
   useEffect(() => {
     console.info(`[BuildingsGroup] loaded ${buildingMeshNodes.length} building mesh nodes`)
   }, [buildingMeshNodes])
+
+  /**
+   * Publish the unique set of API-style buildings (`building_*` ids, deduped,
+   * first-seen name wins) to the store so building-aware UI — the waypoints
+   * panel in particular — tracks whatever the model contains instead of a
+   * hardcoded list. Meshes without a canonical `building_*` id (props, ground,
+   * etc. that fall back to a uuid) are skipped.
+   */
+  useEffect(() => {
+    const footprints = computeBuildingFootprints(
+      scene,
+      buildingMeshNodes,
+      position.x,
+      position.z,
+    )
+    const seen = new Map<string, string>()
+    for (const node of buildingMeshNodes) {
+      if (!/^building_/.test(node.buildingId)) continue
+      if (!seen.has(node.buildingId)) {
+        seen.set(node.buildingId, node.buildingName || node.buildingId)
+      }
+    }
+    const list: CampusBuilding[] = Array.from(seen, ([id, name]) => {
+      const fp = footprints.get(id)
+      return fp ? { id, name, ...fp } : { id, name }
+    })
+    setCampusBuildings(list)
+  }, [scene, buildingMeshNodes, position.x, position.z, setCampusBuildings])
 
   const handleClick = useCallback(
     (e: ThreeEvent<MouseEvent>) => {
