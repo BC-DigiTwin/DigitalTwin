@@ -743,6 +743,7 @@ function CameraViewControls({
   const setCameraMode = useStore((s) => s.setCameraMode)
   const requestCameraReset = useStore((s) => s.requestCameraReset)
   const waypointsCount = useStore((s) => s.waypoints.length)
+  const hasBuildingSelected = useStore((s) => s.selectedEntity !== null)
 
   const isOrbit = mode === 'orbit'
 
@@ -752,7 +753,11 @@ function CameraViewControls({
   }
 
   return (
-    <div className="fixed bottom-4 left-4 z-50 flex items-center gap-2">
+    <div
+      className={`fixed bottom-4 left-4 z-50 flex items-center gap-2 max-md:flex-col max-md:items-stretch max-md:gap-1.5${
+        hasBuildingSelected ? ' max-md:bottom-[calc(60%+1rem)]' : ''
+      }`}
+    >
       {/* Home — orbit: default corner pose; map: campus overview */}
       <button
         type="button"
@@ -768,11 +773,13 @@ function CameraViewControls({
         <HomeIcon className="h-4 w-4" />
       </button>
 
-      {/* Segmented Orbit / Top-down control */}
+      {/* Segmented Orbit / Top-down control — hidden on mobile while a building is selected */}
       <div
         role="radiogroup"
         aria-label="Camera view mode"
-        className="relative flex items-center rounded-full border border-white/15 bg-neutral-950/65 p-1 shadow-lg backdrop-blur-2xl"
+        className={`relative flex w-full items-center rounded-full border border-white/15 bg-neutral-950/65 p-1 shadow-lg backdrop-blur-2xl md:w-auto${
+          hasBuildingSelected ? ' max-md:hidden' : ''
+        }`}
       >
         {/* Sliding thumb — animates between the two segments. */}
         <span
@@ -816,7 +823,7 @@ function CameraViewControls({
           waypointsPanelOpen
             ? 'bg-white/15 text-white ring-1 ring-white/25'
             : 'bg-neutral-950/65 text-white'
-        }`}
+        }${hasBuildingSelected ? ' max-md:hidden' : ''}`}
         title="Waypoints"
         aria-label="Toggle waypoints panel"
         aria-expanded={waypointsPanelOpen}
@@ -888,6 +895,7 @@ const CONTROLS_HELP_DISMISSED_KEY = 'dt-controls-help-dismissed'
  * button in the bottom-right corner. The card opens above that button.
  */
 function ControlsHelp() {
+  const hasBuildingSelected = useStore((s) => s.selectedEntity !== null)
   const [open, setOpen] = useState<boolean>(() => {
     try {
       return localStorage.getItem(CONTROLS_HELP_DISMISSED_KEY) !== '1'
@@ -916,7 +924,11 @@ function ControlsHelp() {
 
   return (
     <>
-      <div className="fixed bottom-4 right-4 z-50">
+      <div
+        className={`fixed bottom-4 right-4 z-50${
+          hasBuildingSelected ? ' max-md:bottom-[calc(60%+1rem)]' : ''
+        }`}
+      >
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
@@ -930,7 +942,11 @@ function ControlsHelp() {
       </div>
 
       {open && (
-        <div className="fixed bottom-16 right-4 z-50 w-[min(92vw,28rem)] rounded-2xl border border-white/15 bg-neutral-950/70 p-4 text-white shadow-2xl backdrop-blur-2xl">
+        <div
+          className={`fixed bottom-16 right-4 z-50 w-[min(92vw,28rem)] rounded-2xl border border-white/15 bg-neutral-950/70 p-4 text-white shadow-2xl backdrop-blur-2xl${
+            hasBuildingSelected ? ' max-md:bottom-[calc(60%+3.5rem)]' : ''
+          }`}
+        >
           <div className="mb-2 flex items-center justify-between">
             <h2 className="text-sm font-semibold tracking-tight">Controls</h2>
             <button

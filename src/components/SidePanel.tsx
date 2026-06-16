@@ -190,7 +190,7 @@ function BuildingHeroImage({
   const progressPercent = Math.round(progress * 100)
 
   return (
-    <div className="relative aspect-4/3 w-full overflow-hidden rounded-lg bg-white/5 ring-1 ring-white/10">
+    <div className="relative aspect-4/3 w-full overflow-hidden rounded-lg bg-white/5 ring-1 ring-white/10 max-md:aspect-video max-md:max-h-28">
       {isLoading ? (
         <div
           className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6"
@@ -212,7 +212,7 @@ function BuildingHeroImage({
         <img
           src={displaySrc}
           alt={alt}
-          className="aspect-4/3 w-full object-cover"
+          className="aspect-4/3 w-full object-cover max-md:aspect-video max-md:max-h-28"
           onError={handleHeroImageError}
         />
       )}
@@ -286,14 +286,14 @@ export function SidePanel({ buildingData, onClose }: SidePanelProps) {
   return (
     <aside
       className={
-        'digital-twin-side-panel fixed inset-y-0 right-0 z-50 flex h-full w-full max-w-md flex-col overflow-hidden border-l border-white/15 bg-neutral-950/55 p-6 shadow-2xl backdrop-blur-3xl backdrop-saturate-150 ' +
+        'digital-twin-side-panel fixed inset-y-0 right-0 z-50 flex h-full w-full max-w-md flex-col overflow-hidden border-l border-white/15 bg-neutral-950/55 p-6 shadow-2xl backdrop-blur-3xl backdrop-saturate-150 max-md:inset-x-0 max-md:inset-y-auto max-md:top-2/5 max-md:bottom-0 max-md:right-auto max-md:h-auto max-md:max-h-[60dvh] max-md:max-w-none max-md:rounded-t-2xl max-md:border-l-0 max-md:border-t max-md:p-4 ' +
         (isClosing ? 'digital-twin-side-panel--exit pointer-events-none' : '')
       }
       role="complementary"
       aria-label="Building details"
       aria-busy={isClosing}
     >
-      <div className="relative mb-4 shrink-0 transition-transform duration-500 ease-out">
+      <div className="relative mb-4 shrink-0 transition-transform duration-500 ease-out max-md:mb-3">
         <button
           type="button"
           onClick={beginClose}

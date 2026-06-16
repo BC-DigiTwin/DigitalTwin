@@ -75,13 +75,19 @@ export const DEFAULT_CAMERA_SETTINGS: CameraSettings = {
  *   • Orbit — left-drag / one-finger ROTATES; Ctrl/Cmd/Shift + left-drag PANS
  *     (OrbitControls' built-in modifier swap). Right-drag also pans. Wheel /
  *     two-finger scroll zoom via the smooth-zoom loop.
+ *
+ * Mobile (max-width 767px) touch overrides (desktop mouse/trackpad unchanged):
+ *   • Orbit — one-finger ROTATE, two-finger PAN (pinch still zooms).
+ *   • Map — one-finger ROTATE (bearing only; pitch stays top-down), two-finger PAN.
  */
 function applyControlMapping(
   controls: ThreeOrbitControls,
   forMode: CameraMode,
 ): void {
+  const mobile = isMobileViewport()
+
   if (forMode === 'map') {
-    controls.enableRotate = false
+    controls.enableRotate = mobile
     controls.screenSpacePanning = true
     controls.minPolarAngle = 0
     controls.maxPolarAngle = 0
@@ -91,13 +97,18 @@ function applyControlMapping(
       MIDDLE: THREE.MOUSE.DOLLY,
       RIGHT: THREE.MOUSE.PAN,
     }
-    controls.touches = {
-      ONE: THREE.TOUCH.PAN,
-      TWO: THREE.TOUCH.DOLLY_PAN,
-    }
+    controls.touches = mobile
+      ? {
+          ONE: THREE.TOUCH.ROTATE,
+          TWO: THREE.TOUCH.DOLLY_PAN,
+        }
+      : {
+          ONE: THREE.TOUCH.PAN,
+          TWO: THREE.TOUCH.DOLLY_PAN,
+        }
   } else {
     controls.enableRotate = true
-    controls.screenSpacePanning = false
+    controls.screenSpacePanning = mobile
     controls.minPolarAngle = 0
     controls.maxPolarAngle = Math.PI
     controls.enableZoom = true
@@ -106,10 +117,15 @@ function applyControlMapping(
       MIDDLE: THREE.MOUSE.DOLLY,
       RIGHT: THREE.MOUSE.PAN,
     }
-    controls.touches = {
-      ONE: THREE.TOUCH.ROTATE,
-      TWO: THREE.TOUCH.DOLLY_ROTATE,
-    }
+    controls.touches = mobile
+      ? {
+          ONE: THREE.TOUCH.ROTATE,
+          TWO: THREE.TOUCH.DOLLY_PAN,
+        }
+      : {
+          ONE: THREE.TOUCH.ROTATE,
+          TWO: THREE.TOUCH.DOLLY_ROTATE,
+        }
   }
 
   controls.update()
@@ -244,8 +260,50 @@ const BUILDING_FOCUS_ARC_OUT_FRAC = 0.065
  * Shift the OrbitControls **look target** along camera-right (world space) so the
  * building sits a bit **left** of frame — room for the HTML side panel on the right.
  */
-const BUILDING_FOCUS_PANEL_SHIFT_MIN = 3.5
-const BUILDING_FOCUS_PANEL_SHIFT_FRAC = 0.16
+const BUILDING_FOCUS_PANEL_SHIFT_MIN = 7
+const BUILDING_FOCUS_PANEL_SHIFT_FRAC = 0.27
+
+/**
+ * Mobile bottom sheet: shift the look target toward screen-bottom so the building
+ * centers in the visible band above the sheet (matches SidePanel `top-2/5`).
+ */
+const MOBILE_BOTTOM_SHEET_HEIGHT_FRAC = 0.6
+
+/**
+ * World-space look-target shift (along screen-down) so the building sits in the
+ * upper viewport band above the mobile bottom sheet instead of dead center.
+ */
+function mobileBuildingFocusVerticalShift(
+  camera: THREE.PerspectiveCamera | THREE.OrthographicCamera,
+  /** Orbit: camera-to-target distance. Map: ortho visible height at the ground plane. */
+  framingSpan: number,
+): number {
+  const visibleFrac = 1 - MOBILE_BOTTOM_SHEET_HEIGHT_FRAC
+  // Slightly above the geometric center of the visible band — leaves headroom for tall meshes.
+  const targetBandCenter = visibleFrac * 0.42
+  const offsetFromScreenCenter = 0.5 - targetBandCenter
+
+  if (camera instanceof THREE.PerspectiveCamera) {
+    const vHalf = THREE.MathUtils.degToRad(camera.fov * 0.5)
+    const visibleHeight = 2 * framingSpan * Math.tan(vHalf)
+    return offsetFromScreenCenter * visibleHeight
+  }
+
+  return offsetFromScreenCenter * framingSpan
+}
+
+/** Screen-down in world space (direction a subject moves when pushed toward the top of the viewport). */
+function getCameraScreenDown(camera: THREE.Camera, out: THREE.Vector3): THREE.Vector3 {
+  camera.getWorldDirection(_focusDirToCam)
+  _vRt.crossVectors(_focusDirToCam, camera.up).normalize()
+  out.crossVectors(_focusDirToCam, _vRt).normalize()
+  return out
+}
+
+/** Match Tailwind `max-md` — layout/camera overrides below this width only. */
+function isMobileViewport(): boolean {
+  return typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches
+}
 
 /**
  * Building-focus moves should feel synced with the selected-building lift.
@@ -405,15 +463,42 @@ function computeFittedOrbitPosition(
   const hHalf = Math.atan(Math.tan(vHalf) * aspect)
   const fitDist = Math.max(r / Math.tan(vHalf), r / Math.tan(hHalf), 8)
   const dist = Math.max(BUILDING_FOCUS_FIXED_ORBIT_DISTANCE, fitDist)
+  const focusDist = isMobileViewport() ? dist * 1.12 : dist
 
-  outPosition.copy(_buildCenter).add(_focusDirToCam.multiplyScalar(dist))
+  outPosition.copy(_buildCenter).add(_focusDirToCam.multiplyScalar(focusDist))
 
   camera.position.copy(outPosition)
   camera.up.copy(_worldUp)
   camera.lookAt(_buildCenter)
+  applyBuildingFocusFramingOffset(camera, r, outLookTarget, _buildCenter, focusDist)
+}
+
+/**
+ * Desktop: shift look target right so the building sits left-of-center for the side panel.
+ * Mobile: keep horizontal centering and shift look target down so the building sits
+ * in the upper portion of the viewport above the bottom sheet.
+ */
+function applyBuildingFocusFramingOffset(
+  camera: THREE.PerspectiveCamera,
+  framingRadius: number,
+  outLookTarget: THREE.Vector3,
+  buildCenter: THREE.Vector3,
+  cameraDistance: number,
+): void {
+  if (isMobileViewport()) {
+    camera.updateMatrixWorld(true)
+    const vShift = mobileBuildingFocusVerticalShift(camera, cameraDistance)
+    getCameraScreenDown(camera, _vRt)
+    outLookTarget.copy(buildCenter).addScaledVector(_vRt, vShift)
+    return
+  }
+
   _vRt.set(1, 0, 0).applyQuaternion(camera.quaternion).normalize()
-  const panelShift = Math.max(BUILDING_FOCUS_PANEL_SHIFT_MIN, r * BUILDING_FOCUS_PANEL_SHIFT_FRAC)
-  outLookTarget.copy(_buildCenter).addScaledVector(_vRt, panelShift)
+  const panelShift = Math.max(
+    BUILDING_FOCUS_PANEL_SHIFT_MIN,
+    framingRadius * BUILDING_FOCUS_PANEL_SHIFT_FRAC,
+  )
+  outLookTarget.copy(buildCenter).addScaledVector(_vRt, panelShift)
 }
 
 function killBuildingFocusTweens(
@@ -1276,17 +1361,28 @@ export function CameraRig({
           margin,
         )
         const currentZoom = cam.zoom
+        const mapZoomFrac = isMobileViewport() ? 0.74 : BUILDING_FOCUS_MAP_ZOOM_FRAC
         const targetZoom = THREE.MathUtils.clamp(
-          fitZoom * BUILDING_FOCUS_MAP_ZOOM_FRAC,
+          fitZoom * mapZoomFrac,
           0.08,
           Math.min(3.2, currentZoom * 1.7),
         )
 
         cam.updateMatrixWorld(true)
-        _vRt.set(1, 0, 0).applyQuaternion(cam.quaternion).normalize()
-        const panelShift = Math.max(BUILDING_FOCUS_PANEL_SHIFT_MIN, footprint * 0.14)
-        const tx = _focusNewTarget.x + _vRt.x * panelShift
-        const tz = _focusNewTarget.z + _vRt.z * panelShift
+        let tx: number
+        let tz: number
+        if (isMobileViewport()) {
+          const orthoVisibleHeight = (2 * mapViewSize) / targetZoom
+          const vShift = mobileBuildingFocusVerticalShift(cam, orthoVisibleHeight)
+          getCameraScreenDown(cam, _vRt)
+          tx = _focusNewTarget.x + _vRt.x * vShift
+          tz = _focusNewTarget.z + _vRt.z * vShift
+        } else {
+          _vRt.set(1, 0, 0).applyQuaternion(cam.quaternion).normalize()
+          const panelShift = Math.max(BUILDING_FOCUS_PANEL_SHIFT_MIN, footprint * BUILDING_FOCUS_PANEL_SHIFT_FRAC)
+          tx = _focusNewTarget.x + _vRt.x * panelShift
+          tz = _focusNewTarget.z + _vRt.z * panelShift
+        }
 
         const dMap = duration * BUILDING_FOCUS_DURATION_MULT
 
