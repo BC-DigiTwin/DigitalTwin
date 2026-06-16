@@ -138,6 +138,9 @@ export const ROADS_MATERIAL_DEFAULTS: RoadMaterialSettings = {
   renderOrder: -10,
 }
 
+/** Road fill color in top-down map view (opacity and other settings unchanged). */
+export const ROADS_MAP_VIEW_COLOR = '#4e757c'
+
 /** `TerrainGroup` grid `lineSegments` draw order — roads must render after this. */
 export const TERRAIN_GROUND_GRID_RENDER_ORDER = -20 as const
 

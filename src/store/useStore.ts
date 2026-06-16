@@ -160,6 +160,8 @@ export interface AppState {
 
     /** Active camera framing mode; `CameraRig` transitions when this changes. */
     cameraMode: CameraViewMode
+    /** GSAP orbit ↔ map transition duration (seconds); synced from Leva Camera panel. */
+    cameraTransitionSpeed: number
     /**
      * Bumped to request a "reset to default top-down" framing. `CameraRig`
      * watches the value (not the count) and re-frames the whole campus.
@@ -217,6 +219,7 @@ export interface AppActions {
 
     setCameraMode: (mode: CameraViewMode) => void
     toggleCameraMode: () => void
+    setCameraTransitionSpeed: (seconds: number) => void
     /** Request a reset to the default top-down overview (clears selection). */
     requestCameraReset: () => void
 }
@@ -273,6 +276,7 @@ export const useStore = create<Store>()(
 
             // Camera state
             cameraMode: 'orbit',
+            cameraTransitionSpeed: 0.8,
             cameraResetNonce: 0,
 
             // Actions
@@ -497,6 +501,13 @@ export const useStore = create<Store>()(
                     }),
                     false,
                     'toggleCameraMode',
+                ),
+
+            setCameraTransitionSpeed: (seconds) =>
+                set(
+                    { cameraTransitionSpeed: seconds },
+                    false,
+                    'setCameraTransitionSpeed',
                 ),
 
             requestCameraReset: () =>
