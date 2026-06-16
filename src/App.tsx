@@ -27,6 +27,7 @@ import { useHydrateLocations } from './hooks/useHydrateLocations'
 import { SceneBackground } from './components/scene/SceneBackground'
 import { SidePanel, type BuildingApiData } from './components/SidePanel'
 import { BuildingHoverLabel } from './components/scene/BuildingHoverLabel'
+import { BuildingSelector } from './components/BuildingSelector'
 import { cameraHeading } from './utils/cameraHeading'
 import { mockBuildings } from '../lib/mockDatabase'
 import {
@@ -834,6 +835,8 @@ function CameraViewControls({
           {waypointsCount}
         </span>
       </button>
+
+      <BuildingSelector />
     </div>
   )
 }

@@ -96,8 +96,17 @@ export function BuildingHoverLabel() {
       zIndexRange={[30, 0]}
       style={{ pointerEvents: 'none' }}
     >
-      <div className="pointer-events-none whitespace-nowrap rounded-full border border-white/15 bg-neutral-950/75 px-3 py-1 text-xs font-medium text-white shadow-lg backdrop-blur-md">
-        {name}
+      <div
+        key={hoveredId}
+        className="digital-twin-building-hover-label pointer-events-none"
+      >
+        <div className="digital-twin-building-hover-label__badge pointer-events-none flex items-center gap-2 whitespace-nowrap rounded-full border border-sky-300/50 bg-neutral-950/90 px-4 py-1.5 text-sm font-semibold tracking-wide text-white backdrop-blur-md">
+          <span
+            aria-hidden
+            className="h-2 w-2 shrink-0 rounded-full bg-sky-300 shadow-[0_0_8px_rgba(125,211,252,0.9)]"
+          />
+          {name}
+        </div>
       </div>
     </Html>
   )
