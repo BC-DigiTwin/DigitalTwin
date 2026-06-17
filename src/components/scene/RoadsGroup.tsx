@@ -1,13 +1,16 @@
-import { useMemo, useEffect, useLayoutEffect, useRef } from 'react'
+import { useMemo, useEffect, useLayoutEffect, useRef, type RefObject } from 'react'
 import type { Group } from 'three'
 import * as THREE from 'three'
+import { useFrame } from '@react-three/fiber'
+import gsap from 'gsap'
 import { useAssetLoader } from '../../hooks/useAssetLoader'
-import { useStore } from '../../store/useStore'
+import { useStore, type CameraViewMode } from '../../store/useStore'
 import { gpsToWorldPosition } from '../../utils/gps'
 import { WORLD_ORIGIN } from '../../constants/coordinates'
 import {
   type RoadMaterialSettings,
   ROADS_ABOVE_GRID_EPS,
+  ROADS_MAP_VIEW_COLOR,
   ROADS_MIN_RENDER_ORDER,
 } from '../../constants/sceneMaterials'
 import { RENDER_LAYERS } from '../../constants/renderLayers'
@@ -23,12 +26,21 @@ useAssetLoader.preload(CAMPUS_ROADS_GLB_PATH)
 const _bakedColor = new THREE.Color()
 
 /** Bakes opacity into RGB so overlaps do not stack alpha (see `TerrainGroup` grid lines). */
-function bakeRoadDisplayColor(settings: RoadMaterialSettings): string {
+function bakeRoadDisplayColor(
+  settings: Pick<RoadMaterialSettings, 'color' | 'opacity'>,
+): THREE.Color {
   _bakedColor.set(settings.color)
   if (settings.opacity < 1) {
     _bakedColor.multiplyScalar(settings.opacity)
   }
-  return `#${_bakedColor.getHexString()}`
+  return _bakedColor.clone()
+}
+
+function roadViewBaseColor(
+  material: RoadMaterialSettings,
+  cameraMode: CameraViewMode,
+): string {
+  return cameraMode === 'map' ? ROADS_MAP_VIEW_COLOR : material.color
 }
 
 function normalizeName(name: string): string {
@@ -108,16 +120,14 @@ export function prepareRoadsScene(root: THREE.Object3D): THREE.Object3D | null {
 function RoadMeshNode({
   mesh,
   material,
+  displayColorRef,
 }: {
   mesh: THREE.Mesh
   material: RoadMaterialSettings
+  displayColorRef: RefObject<THREE.Color>
 }) {
   const meshRef = useRef<THREE.Mesh>(null)
-
-  const bakedColor = useMemo(
-    () => bakeRoadDisplayColor(material),
-    [material.color, material.opacity],
-  )
+  const materialRef = useRef<THREE.MeshBasicMaterial>(null)
 
   useLayoutEffect(() => {
     const m = meshRef.current
@@ -125,6 +135,20 @@ function RoadMeshNode({
     m.raycast = () => undefined
     m.layers.enable(RENDER_LAYERS.PATHWAYS)
   }, [])
+
+  useLayoutEffect(() => {
+    const mat = materialRef.current
+    const displayColor = displayColorRef.current
+    if (!mat || !displayColor) return
+    mat.color.copy(displayColor)
+  })
+
+  useFrame(() => {
+    const mat = materialRef.current
+    const displayColor = displayColorRef.current
+    if (!mat || !displayColor) return
+    mat.color.copy(displayColor)
+  })
 
   if (!meshHasTriangleFaces(mesh.geometry) || vertexCount(mesh.geometry) === 0) {
     return null
@@ -142,7 +166,7 @@ function RoadMeshNode({
       renderOrder={renderOrder}
     >
       <meshBasicMaterial
-        color={bakedColor}
+        ref={materialRef}
         transparent={false}
         opacity={1}
         side={material.doubleSide ? THREE.DoubleSide : THREE.FrontSide}
@@ -159,9 +183,11 @@ function RoadMeshNode({
 function RoadSceneNode({
   node,
   material,
+  displayColorRef,
 }: {
   node: THREE.Object3D
   material: RoadMaterialSettings
+  displayColorRef: RefObject<THREE.Color>
 }) {
   if ((node as THREE.Mesh).isMesh) {
     return (
@@ -169,6 +195,7 @@ function RoadSceneNode({
         key={node.uuid}
         mesh={node as THREE.Mesh}
         material={material}
+        displayColorRef={displayColorRef}
       />
     )
   }
@@ -186,7 +213,12 @@ function RoadSceneNode({
       scale={obj.scale}
     >
       {obj.children.map((child) => (
-        <RoadSceneNode key={child.uuid} node={child} material={material} />
+        <RoadSceneNode
+          key={child.uuid}
+          node={child}
+          material={material}
+          displayColorRef={displayColorRef}
+        />
       ))}
     </group>
   )
@@ -200,10 +232,48 @@ export function RoadsGroup() {
   const gltf = useAssetLoader(CAMPUS_ROADS_GLB_PATH)
   const roadsMaterial = useStore((s) => s.roadsMaterial)
   const roadsVisible = useStore((s) => s.roadsVisible)
+  const cameraMode = useStore((s) => s.cameraMode)
+  const cameraTransitionSpeed = useStore((s) => s.cameraTransitionSpeed)
   const groupRef = useRef<Group>(null)
   const position = gpsToWorldPosition(WORLD_ORIGIN.lat, WORLD_ORIGIN.lon)
 
   const roadsScene = useMemo(() => prepareRoadsScene(gltf.scene), [gltf.scene])
+
+  const displayColorRef = useRef(
+    bakeRoadDisplayColor({
+      color: roadViewBaseColor(roadsMaterial, cameraMode),
+      opacity: roadsMaterial.opacity,
+    }),
+  )
+
+  useLayoutEffect(() => {
+    const target = bakeRoadDisplayColor({
+      color: roadViewBaseColor(roadsMaterial, cameraMode),
+      opacity: roadsMaterial.opacity,
+    })
+
+    gsap.killTweensOf(displayColorRef.current)
+    gsap.to(displayColorRef.current, {
+      r: target.r,
+      g: target.g,
+      b: target.b,
+      duration: cameraTransitionSpeed,
+      ease: 'power2.inOut',
+      overwrite: true,
+    })
+  }, [
+    cameraMode,
+    roadsMaterial.color,
+    roadsMaterial.opacity,
+    cameraTransitionSpeed,
+  ])
+
+  useEffect(
+    () => () => {
+      gsap.killTweensOf(displayColorRef.current)
+    },
+    [],
+  )
 
   useLayoutEffect(() => {
     const root = groupRef.current
@@ -224,7 +294,11 @@ export function RoadsGroup() {
   return (
     <group ref={groupRef} name="RoadsGroup" position={position}>
       <group position={[0, ROADS_ABOVE_GRID_EPS, 0]}>
-        <RoadSceneNode node={roadsScene} material={roadsMaterial} />
+        <RoadSceneNode
+          node={roadsScene}
+          material={roadsMaterial}
+          displayColorRef={displayColorRef}
+        />
       </group>
     </group>
   )

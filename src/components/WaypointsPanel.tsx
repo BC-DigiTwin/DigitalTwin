@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useStore, type CampusBuilding } from '../store/useStore'
 import { mockBuildings } from '../../lib/mockDatabase'
 import {
@@ -81,9 +81,9 @@ function defaultLabel(wp: Waypoint): string {
 /* ── Panel ───────────────────────────────────────────────────────────── */
 
 /**
- * Floating left-edge waypoint manager.
+ * Left-edge waypoint manager panel.
  *
- *   • Toggle: expand/collapse from a compact pill on the lower-left.
+ *   • Toggle lives in the bottom-left toolbar (`CameraViewControls`).
  *   • Expanded: category filter chips, placement-mode toggle + draft
  *     category dropdown, waypoint list grouped by building, and an export
  *     button that copies a `mockWaypoints.ts` snippet to the clipboard.
@@ -93,14 +93,21 @@ function defaultLabel(wp: Waypoint): string {
  * The panel mounts outside the `<Canvas>` (it's pure HTML), but it reads
  * and writes through the same Zustand store that the scene consumes.
  */
-export function WaypointsPanel() {
-  const [open, setOpen] = useState(true)
+export function WaypointsPanel({
+  open,
+  onOpenChange,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
 
   const waypoints = useStore((s) => s.waypoints)
   const selectedWaypointId = useStore((s) => s.selectedWaypointId)
   const setSelectedWaypointId = useStore((s) => s.setSelectedWaypointId)
   const hoveredWaypointId = useStore((s) => s.hoveredWaypointId)
   const setHoveredWaypointId = useStore((s) => s.setHoveredWaypointId)
+  const hoveredWaypointCategory = useStore((s) => s.hoveredWaypointCategory)
+  const setHoveredWaypointCategory = useStore((s) => s.setHoveredWaypointCategory)
   const placementMode = useStore((s) => s.waypointPlacementMode)
   const setWaypointPlacementMode = useStore((s) => s.setWaypointPlacementMode)
   const draftCategory = useStore((s) => s.waypointDraftCategory)
@@ -130,11 +137,6 @@ export function WaypointsPanel() {
     selectedEntity && selectedEntity !== dismissedBuildingFocus
       ? selectedEntity
       : null
-
-  // Surface the panel when a building selection focuses it.
-  useEffect(() => {
-    if (focusBuildingId) setOpen(true)
-  }, [focusBuildingId])
 
   /** All buildings the model + mock data expose, in a stable display order. */
   const knownBuildings = useMemo(
@@ -203,26 +205,11 @@ export function WaypointsPanel() {
     }
   }
 
-  if (!open) {
-    return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="fixed bottom-4 left-4 z-40 flex items-center gap-2 rounded-full border border-white/15 bg-neutral-950/65 px-4 py-2 text-sm font-medium text-white shadow-lg backdrop-blur-2xl hover:bg-neutral-900/80"
-        aria-label="Open waypoints panel"
-      >
-        <PinIcon className="h-4 w-4" />
-        Waypoints
-        <span className="ml-1 rounded-full bg-white/12 px-2 py-0.5 text-xs">
-          {waypoints.length}
-        </span>
-      </button>
-    )
-  }
+  if (!open) return null
 
   return (
     <aside
-      className="fixed bottom-4 left-4 top-4 z-40 flex w-80 flex-col overflow-hidden rounded-2xl border border-white/15 bg-neutral-950/55 text-white shadow-2xl backdrop-blur-3xl backdrop-saturate-150"
+      className="fixed bottom-16 left-4 top-4 z-40 flex w-80 flex-col overflow-hidden rounded-2xl border border-white/15 bg-neutral-950/55 text-white shadow-2xl backdrop-blur-3xl backdrop-saturate-150"
       aria-label="Campus waypoints"
     >
       {/* Header */}
@@ -245,7 +232,7 @@ export function WaypointsPanel() {
         </button>
         <button
           type="button"
-          onClick={() => setOpen(false)}
+          onClick={() => onOpenChange(false)}
           className="flex h-7 w-7 items-center justify-center rounded-md bg-white/8 text-white/90 ring-1 ring-white/15 hover:bg-white/15"
           aria-label="Collapse panel"
         >
@@ -307,20 +294,31 @@ export function WaypointsPanel() {
           {WAYPOINT_CATEGORIES.map((c) => {
             const on = categoryFilters[c]
             const meta = WAYPOINT_CATEGORY_META[c]
+            const isCategoryHovered = hoveredWaypointCategory === c
             return (
               <button
                 key={c}
                 type="button"
                 onClick={() => toggleWaypointCategoryFilter(c)}
+                onMouseEnter={() => setHoveredWaypointCategory(c)}
+                onMouseLeave={() => {
+                  if (useStore.getState().hoveredWaypointCategory === c) {
+                    setHoveredWaypointCategory(null)
+                  }
+                }}
                 aria-pressed={on}
                 className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ring-1 transition ${
-                  on
-                    ? 'bg-white/12 text-white ring-white/22'
-                    : 'bg-white/4 text-white/45 ring-white/10 hover:text-white/70'
+                  isCategoryHovered
+                    ? 'bg-white/18 text-white ring-white/35'
+                    : on
+                      ? 'bg-white/12 text-white ring-white/22'
+                      : 'bg-white/4 text-white/45 ring-white/10 hover:text-white/70'
                 }`}
                 style={
-                  on
-                    ? { boxShadow: `inset 0 0 0 1px ${meta.color}55` }
+                  on || isCategoryHovered
+                    ? {
+                        boxShadow: `inset 0 0 0 1px ${meta.color}${isCategoryHovered ? 'aa' : '55'}`,
+                      }
                     : undefined
                 }
               >

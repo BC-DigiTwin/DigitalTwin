@@ -66,3 +66,82 @@ body {
 .digital-twin-side-panel.digital-twin-side-panel--exit {
   animation: digital-twin-panel-out 0.36s cubic-bezier(0.55, 0, 1, 0.45) forwards;
 }
+
+@media (max-width: 767px) {
+  @keyframes digital-twin-panel-in-mobile {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes digital-twin-panel-out-mobile {
+    from {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    to {
+      opacity: 0;
+      transform: translateY(18px);
+    }
+  }
+
+  .digital-twin-side-panel {
+    animation: digital-twin-panel-in-mobile 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .digital-twin-side-panel.digital-twin-side-panel--exit {
+    animation: digital-twin-panel-out-mobile 0.36s cubic-bezier(0.55, 0, 1, 0.45) forwards;
+  }
+}
+
+@keyframes digital-twin-building-label-in {
+  from {
+    opacity: 0;
+    transform: scale(0.82) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes digital-twin-building-label-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes digital-twin-building-label-glow {
+  0%,
+  100% {
+    border-color: rgba(125, 211, 252, 0.45);
+    box-shadow:
+      0 0 14px rgba(56, 189, 248, 0.28),
+      0 10px 28px rgba(0, 0, 0, 0.55);
+  }
+  50% {
+    border-color: rgba(186, 230, 253, 0.85);
+    box-shadow:
+      0 0 26px rgba(56, 189, 248, 0.55),
+      0 14px 32px rgba(0, 0, 0, 0.5);
+  }
+}
+
+.digital-twin-building-hover-label {
+  animation: digital-twin-building-label-float 2.4s ease-in-out infinite;
+}
+
+.digital-twin-building-hover-label__badge {
+  animation:
+    digital-twin-building-label-in 0.35s cubic-bezier(0.22, 1, 0.36, 1) both,
+    digital-twin-building-label-glow 2.4s ease-in-out 0.35s infinite;
+}

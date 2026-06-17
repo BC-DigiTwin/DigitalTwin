@@ -27,6 +27,7 @@ import { useHydrateLocations } from './hooks/useHydrateLocations'
 import { SceneBackground } from './components/scene/SceneBackground'
 import { SidePanel, type BuildingApiData } from './components/SidePanel'
 import { BuildingHoverLabel } from './components/scene/BuildingHoverLabel'
+import { BuildingSelector } from './components/BuildingSelector'
 import { cameraHeading } from './utils/cameraHeading'
 import { mockBuildings } from '../lib/mockDatabase'
 import {
@@ -35,7 +36,7 @@ import {
 function PerfOverlay() {
   const showPerfOverlay = useStore((s) => s.showPerfOverlay)
   if (!showPerfOverlay) return null
-  return <Perf position="bottom-left" minimal={false} />
+  return <Perf position="top-left" minimal={false} />
 }
 
 /**
@@ -604,6 +605,7 @@ function SceneViewportControls() {
  */
 function CameraRigWithControls() {
   const { mode, toggleMode } = useCameraControl()
+  const setCameraTransitionSpeed = useStore((s) => s.setCameraTransitionSpeed)
 
   const {
     _mode,
@@ -635,6 +637,10 @@ function CameraRigWithControls() {
 
   // Silence unused-var for the read-only mode display
   void _mode
+
+  useEffect(() => {
+    setCameraTransitionSpeed(transitionSpeed)
+  }, [transitionSpeed, setCameraTransitionSpeed])
 
   return (
     <CameraRig
@@ -717,22 +723,28 @@ function BuildingDetailsPanel() {
 }
 
 /**
- * Top-right floating camera-view cluster:
+ * Bottom-left floating toolbar: home, view mode, waypoints.
  *
- *   • A segmented control to switch between **Orbit** (perspective) and
- *     **Top-down** (orthographic). Selecting a mode only changes the *angle*
- *     of the current view — `CameraRig` animates the transition (GSAP) and
- *     preserves the look target, so it never recenters or teleports.
- *   • A separate **home** button that resets to the campus overview and clears
- *     any selection (`requestCameraReset`).
+ *   • **Home** resets the current view — orbit → default corner pose, map →
+ *     campus overview — and clears selection.
+ *   • **Orbit / Map** segmented control switches camera angle only — `CameraRig`
+ *     animates the transition (GSAP) without recentering.
+ *   • **Waypoints** toggles the waypoint manager panel.
  *
- * Both drive `CameraRig` purely through the Zustand store, so this stays a
- * thin, presentational overlay outside the Canvas.
+ * Help (`ControlsHelp`) and compass (`CompassIndicator`) are separate overlays.
  */
-function CameraViewControls() {
+function CameraViewControls({
+  waypointsPanelOpen,
+  onWaypointsPanelOpenChange,
+}: {
+  waypointsPanelOpen: boolean
+  onWaypointsPanelOpenChange: (open: boolean) => void
+}) {
   const mode = useStore((s) => s.cameraMode)
   const setCameraMode = useStore((s) => s.setCameraMode)
   const requestCameraReset = useStore((s) => s.requestCameraReset)
+  const waypointsCount = useStore((s) => s.waypoints.length)
+  const hasBuildingSelected = useStore((s) => s.selectedEntity !== null)
 
   const isOrbit = mode === 'orbit'
 
@@ -742,15 +754,33 @@ function CameraViewControls() {
   }
 
   return (
-    <div className="fixed right-4 top-4 z-50 flex items-center gap-2">
-      <ControlsHelp />
-      <CompassIndicator />
+    <div
+      className={`fixed bottom-4 left-4 z-50 flex items-center gap-2 max-md:flex-col max-md:items-stretch max-md:gap-1.5${
+        hasBuildingSelected ? ' max-md:bottom-[calc(60%+1rem)]' : ''
+      }`}
+    >
+      {/* Home — orbit: default corner pose; map: campus overview */}
+      <button
+        type="button"
+        onClick={requestCameraReset}
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/15 bg-neutral-950/65 text-white shadow-lg backdrop-blur-2xl transition hover:bg-neutral-900/85"
+        title={isOrbit ? 'Reset to default view' : 'Reset to campus overview'}
+        aria-label={
+          isOrbit
+            ? 'Reset camera to default orbit view'
+            : 'Reset camera to campus overview'
+        }
+      >
+        <HomeIcon className="h-5 w-5 shrink-0" />
+      </button>
 
-      {/* Segmented Orbit / Top-down control */}
+      {/* Segmented Orbit / Top-down control — hidden on mobile while a building is selected */}
       <div
         role="radiogroup"
         aria-label="Camera view mode"
-        className="relative flex items-center rounded-full border border-white/15 bg-neutral-950/65 p-1 shadow-lg backdrop-blur-2xl"
+        className={`relative flex w-full items-center rounded-full border border-white/15 bg-neutral-950/65 p-1 shadow-lg backdrop-blur-2xl md:w-auto${
+          hasBuildingSelected ? ' max-md:hidden' : ''
+        }`}
       >
         {/* Sliding thumb — animates between the two segments. */}
         <span
@@ -787,16 +817,26 @@ function CameraViewControls() {
         </button>
       </div>
 
-      {/* Home / reset to campus overview */}
       <button
         type="button"
-        onClick={requestCameraReset}
-        className="flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-neutral-950/65 text-white shadow-lg backdrop-blur-2xl transition hover:bg-neutral-900/85"
-        title="Reset to campus overview"
-        aria-label="Reset camera to campus overview"
+        onClick={() => onWaypointsPanelOpenChange(!waypointsPanelOpen)}
+        className={`flex h-9 items-center gap-1.5 rounded-full border border-white/15 px-3.5 text-sm font-medium shadow-lg backdrop-blur-2xl transition hover:bg-neutral-900/85 ${
+          waypointsPanelOpen
+            ? 'bg-white/15 text-white ring-1 ring-white/25'
+            : 'bg-neutral-950/65 text-white'
+        }${hasBuildingSelected ? ' max-md:hidden' : ''}`}
+        title="Waypoints"
+        aria-label="Toggle waypoints panel"
+        aria-expanded={waypointsPanelOpen}
       >
-        <HomeIcon className="h-4 w-4" />
+        <PinIcon className="h-4 w-4" />
+        Waypoints
+        <span className="rounded-full bg-white/12 px-1.5 py-0.5 text-xs tabular-nums">
+          {waypointsCount}
+        </span>
       </button>
+
+      <BuildingSelector />
     </div>
   )
 }
@@ -822,11 +862,12 @@ function CompassIndicator() {
 
   return (
     <div
-      className="relative flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-neutral-950/65 shadow-lg backdrop-blur-2xl"
+      className="fixed top-4 left-1/2 z-50 -translate-x-1/2"
       title="North"
       aria-label="Compass — points north"
     >
-      <div ref={needleRef} className="h-full w-full will-change-transform">
+      <div className="relative flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-neutral-950/65 shadow-lg backdrop-blur-2xl">
+        <div ref={needleRef} className="h-full w-full will-change-transform">
         <svg viewBox="0 0 36 36" className="h-full w-full" aria-hidden>
           {/* North half (red), pointing up */}
           <path d="M18 7 L21.2 18 L18 16 L14.8 18 Z" fill="#f4647d" />
@@ -843,6 +884,7 @@ function CompassIndicator() {
             N
           </text>
         </svg>
+        </div>
       </div>
     </div>
   )
@@ -853,10 +895,10 @@ const CONTROLS_HELP_DISMISSED_KEY = 'dt-controls-help-dismissed'
 /**
  * Dismissible controls cheat-sheet. Opens automatically on first run (until
  * dismissed, persisted in localStorage) and can be reopened with the `?`
- * button. Lives in the top-right cluster; the card is pinned top-center so it
- * never collides with the side / waypoint panels.
+ * button in the bottom-right corner. The card opens above that button.
  */
 function ControlsHelp() {
+  const hasBuildingSelected = useStore((s) => s.selectedEntity !== null)
   const [open, setOpen] = useState<boolean>(() => {
     try {
       return localStorage.getItem(CONTROLS_HELP_DISMISSED_KEY) !== '1'
@@ -876,8 +918,8 @@ function ControlsHelp() {
 
   const rows: [string, string][] = [
     ['Zoom', 'Scroll wheel / two-finger scroll / pinch'],
-    ['Pan', 'Left-drag / one-finger drag'],
-    ['Rotate (orbit)', 'Right-drag, or Ctrl-drag'],
+    ['Rotate (orbit)', 'Left-drag / one-finger drag'],
+    ['Pan', 'Ctrl/Cmd-drag, or right-drag'],
     ['Select', 'Click a building'],
     ['View', 'O orbit · M map · H home'],
     ['Deselect', 'Esc'],
@@ -885,19 +927,29 @@ function ControlsHelp() {
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-neutral-950/65 text-sm font-semibold text-white shadow-lg backdrop-blur-2xl transition hover:bg-neutral-900/85"
-        title="Controls"
-        aria-label="Show controls help"
-        aria-expanded={open}
+      <div
+        className={`fixed bottom-4 right-4 z-50${
+          hasBuildingSelected ? ' max-md:bottom-[calc(60%+1rem)]' : ''
+        }`}
       >
-        ?
-      </button>
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          className="flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-neutral-950/65 text-sm font-semibold text-white shadow-lg backdrop-blur-2xl transition hover:bg-neutral-900/85"
+          title="Controls"
+          aria-label="Show controls help"
+          aria-expanded={open}
+        >
+          ?
+        </button>
+      </div>
 
       {open && (
-        <div className="fixed left-1/2 top-4 z-50 w-[min(92vw,28rem)] -translate-x-1/2 rounded-2xl border border-white/15 bg-neutral-950/70 p-4 text-white shadow-2xl backdrop-blur-2xl">
+        <div
+          className={`fixed bottom-16 right-4 z-50 w-[min(92vw,28rem)] rounded-2xl border border-white/15 bg-neutral-950/70 p-4 text-white shadow-2xl backdrop-blur-2xl${
+            hasBuildingSelected ? ' max-md:bottom-[calc(60%+3.5rem)]' : ''
+          }`}
+        >
           <div className="mb-2 flex items-center justify-between">
             <h2 className="text-sm font-semibold tracking-tight">Controls</h2>
             <button
@@ -926,7 +978,7 @@ function ControlsHelp() {
  * Global keyboard shortcuts (HTML side, outside the Canvas):
  *   Esc — clear building + waypoint selection
  *   O / M — Orbit / Map view
- *   H — Home (reset to campus overview)
+ *   H — Home (orbit → default view, map → campus overview)
  * Ignored while typing in an input/textarea/select so panel fields keep working.
  */
 function KeyboardShortcuts() {
@@ -994,19 +1046,20 @@ function HomeIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 20 20" fill="none" className={className} aria-hidden>
       <path
-        d="M3.5 9.5 10 4l6.5 5.5"
+        d="M4 16V8.5l6-4 6 4V16"
         stroke="currentColor"
         strokeWidth="1.5"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-      <path
-        d="M5.25 8.5V15.5h9.5V8.5"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+    </svg>
+  )
+}
+
+function PinIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" fill="currentColor" className={className} aria-hidden>
+      <path d="M8 1.25c-2.62 0-4.75 2.12-4.75 4.75 0 3.7 4.05 8.04 4.4 8.4a.5.5 0 00.7 0c.35-.36 4.4-4.7 4.4-8.4 0-2.63-2.13-4.75-4.75-4.75zm0 6.5a1.75 1.75 0 110-3.5 1.75 1.75 0 010 3.5z" />
     </svg>
   )
 }
@@ -1035,6 +1088,7 @@ function TopDownIcon({ className }: { className?: string }) {
 
 export default function App() {
   useHydrateLocations()
+  const [waypointsPanelOpen, setWaypointsPanelOpen] = useState(false)
 
   // Tracks the most recent pointer-down on the canvas so `onPointerMissed`
   // (which also fires after camera drags) can tell a genuine click on empty
@@ -1075,7 +1129,12 @@ export default function App() {
         <LoadingScreen />
         <KeyboardShortcuts />
         <BuildingDetailsPanel />
-        <CameraViewControls />
+        <CameraViewControls
+          waypointsPanelOpen={waypointsPanelOpen}
+          onWaypointsPanelOpenChange={setWaypointsPanelOpen}
+        />
+        <CompassIndicator />
+        <ControlsHelp />
 
         <Canvas
           dpr={[1, 2]}
@@ -1121,7 +1180,10 @@ export default function App() {
             </AssetErrorBoundary>
           </CameraControlProvider>
         </Canvas>
-        <WaypointsPanel />
+        <WaypointsPanel
+          open={waypointsPanelOpen}
+          onOpenChange={setWaypointsPanelOpen}
+        />
       </div>
     </DebugWrapper>
   )

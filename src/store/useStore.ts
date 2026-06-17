@@ -143,6 +143,8 @@ export interface AppState {
     selectedWaypointId: string | null
     /** Mouseover waypoint id; updated imperatively from marker pointer events. */
     hoveredWaypointId: string | null
+    /** Category hovered in the panel filter row — highlights all pins of that type. */
+    hoveredWaypointCategory: WaypointCategory | null
     /** When true, the placement ground catcher is mounted and TransformControls attach to the selected waypoint. */
     waypointPlacementMode: boolean
     /** Category assigned to NEW waypoints created via placement mode click. */
@@ -160,6 +162,8 @@ export interface AppState {
 
     /** Active camera framing mode; `CameraRig` transitions when this changes. */
     cameraMode: CameraViewMode
+    /** GSAP orbit ↔ map transition duration (seconds); synced from Leva Camera panel. */
+    cameraTransitionSpeed: number
     /**
      * Bumped to request a "reset to default top-down" framing. `CameraRig`
      * watches the value (not the count) and re-frames the whole campus.
@@ -206,6 +210,7 @@ export interface AppActions {
     removeWaypoint: (id: string) => void
     setSelectedWaypointId: (id: string | null) => void
     setHoveredWaypointId: (id: string | null) => void
+    setHoveredWaypointCategory: (category: WaypointCategory | null) => void
     setWaypointPlacementMode: (on: boolean) => void
     setWaypointDraftCategory: (category: WaypointCategory) => void
     toggleWaypointCategoryFilter: (category: WaypointCategory) => void
@@ -217,6 +222,7 @@ export interface AppActions {
 
     setCameraMode: (mode: CameraViewMode) => void
     toggleCameraMode: () => void
+    setCameraTransitionSpeed: (seconds: number) => void
     /** Request a reset to the default top-down overview (clears selection). */
     requestCameraReset: () => void
 }
@@ -266,6 +272,7 @@ export const useStore = create<Store>()(
             waypoints: [],
             selectedWaypointId: null,
             hoveredWaypointId: null,
+            hoveredWaypointCategory: null,
             waypointPlacementMode: false,
             waypointDraftCategory: 'accessibility',
             waypointCategoryFilters: { ...DEFAULT_WAYPOINT_CATEGORY_FILTERS },
@@ -273,6 +280,7 @@ export const useStore = create<Store>()(
 
             // Camera state
             cameraMode: 'orbit',
+            cameraTransitionSpeed: 0.8,
             cameraResetNonce: 0,
 
             // Actions
@@ -448,6 +456,13 @@ export const useStore = create<Store>()(
             setHoveredWaypointId: (id) =>
                 set({ hoveredWaypointId: id }, false, 'setHoveredWaypointId'),
 
+            setHoveredWaypointCategory: (category) =>
+                set(
+                    { hoveredWaypointCategory: category },
+                    false,
+                    'setHoveredWaypointCategory',
+                ),
+
             setWaypointPlacementMode: (on) =>
                 set({ waypointPlacementMode: on }, false, 'setWaypointPlacementMode'),
 
@@ -497,6 +512,13 @@ export const useStore = create<Store>()(
                     }),
                     false,
                     'toggleCameraMode',
+                ),
+
+            setCameraTransitionSpeed: (seconds) =>
+                set(
+                    { cameraTransitionSpeed: seconds },
+                    false,
+                    'setCameraTransitionSpeed',
                 ),
 
             requestCameraReset: () =>

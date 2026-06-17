@@ -20,24 +20,33 @@ const CANVAS_PX = 128
 const RING_WIDTH = 6
 const BG_ALPHA = 0.62
 
-type CacheKey = `${WaypointCategory}::${number}`
+export type WaypointIconVariant = 'default' | 'map'
+
+type CacheKey = `${WaypointCategory}::${number}::${WaypointIconVariant}`
 const cache = new Map<CacheKey, THREE.CanvasTexture>()
+
+const MAP_RING_WIDTH = 2.5
+const MAP_GLYPH_SCALE = 1.38
 
 /**
  * Get (or create) the canvas texture for the given category. `scale` is a
  * 0–1 multiplier on icon intensity — pass `1` for the default lit look and
  * lower values to dim the icon e.g. when filtered out (currently unused;
  * reserved for future hover-foreground states).
+ *
+ * Pass `variant: 'map'` for the top-down map view: thinner ring stroke and a
+ * larger category glyph so pins stay legible when the whole campus is in frame.
  */
 export function getWaypointIconTexture(
   category: WaypointCategory,
   scale: number = 1,
+  variant: WaypointIconVariant = 'default',
 ): THREE.CanvasTexture {
-  const key: CacheKey = `${category}::${roundScale(scale)}`
+  const key: CacheKey = `${category}::${roundScale(scale)}::${variant}`
   const cached = cache.get(key)
   if (cached) return cached
 
-  const tex = buildIconTexture(category, roundScale(scale))
+  const tex = buildIconTexture(category, roundScale(scale), variant)
   cache.set(key, tex)
   return tex
 }
@@ -49,6 +58,7 @@ function roundScale(scale: number): number {
 function buildIconTexture(
   category: WaypointCategory,
   scale: number,
+  variant: WaypointIconVariant = 'default',
 ): THREE.CanvasTexture {
   const canvas = document.createElement('canvas')
   canvas.width = CANVAS_PX
@@ -61,14 +71,15 @@ function buildIconTexture(
   const color = WAYPOINT_CATEGORY_META[category].color
   const cx = CANVAS_PX / 2
   const cy = CANVAS_PX / 2
-  const r = CANVAS_PX / 2 - RING_WIDTH
+  const ringWidth = variant === 'map' ? MAP_RING_WIDTH : RING_WIDTH
+  const r = CANVAS_PX / 2 - ringWidth
 
   ctx.beginPath()
   ctx.arc(cx, cy, r, 0, Math.PI * 2)
   ctx.fillStyle = `rgba(8, 14, 22, ${BG_ALPHA})`
   ctx.fill()
 
-  ctx.lineWidth = RING_WIDTH
+  ctx.lineWidth = ringWidth
   ctx.strokeStyle = color
   ctx.globalAlpha = scale
   ctx.stroke()
@@ -77,7 +88,15 @@ function buildIconTexture(
   ctx.strokeStyle = color
   ctx.lineJoin = 'round'
   ctx.lineCap = 'round'
-  drawCategoryGlyph(ctx, category, cx, cy)
+  if (variant === 'map') {
+    ctx.save()
+    ctx.translate(cx, cy)
+    ctx.scale(MAP_GLYPH_SCALE, MAP_GLYPH_SCALE)
+    drawCategoryGlyph(ctx, category, 0, 0)
+    ctx.restore()
+  } else {
+    drawCategoryGlyph(ctx, category, cx, cy)
+  }
 
   ctx.globalAlpha = 1
 

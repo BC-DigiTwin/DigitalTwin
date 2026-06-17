@@ -42,30 +42,32 @@ describe('DebugWrapper', () => {
     expect(leva).toHaveAttribute('data-hidden', 'true')
   })
 
-  it('always shows the scene options trigger', () => {
-    useStore.setState({ debugMode: false })
-
+  it('opens the drawer with LevaPanel when ` is pressed', () => {
     render(
       <DebugWrapper>
         <div>Content</div>
       </DebugWrapper>,
     )
 
-    expect(screen.getByRole('button', { name: /open scene options/i })).toBeInTheDocument()
-  })
-
-  it('opens the drawer with LevaPanel when the menu is toggled on', () => {
-    render(
-      <DebugWrapper>
-        <div>Content</div>
-      </DebugWrapper>,
-    )
-
-    fireEvent.click(screen.getByRole('button', { name: /open scene options/i }))
+    fireEvent.keyDown(window, { key: '`' })
 
     expect(screen.getByTestId('scene-options-drawer')).toHaveAttribute('data-open', 'true')
     expect(screen.getByTestId('leva-panel')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /close scene options/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /close/i })).toBeInTheDocument()
+  })
+
+  it('toggles the drawer closed when ` is pressed again', () => {
+    render(
+      <DebugWrapper>
+        <div>Content</div>
+      </DebugWrapper>,
+    )
+
+    fireEvent.keyDown(window, { key: '`' })
+    expect(screen.getByTestId('scene-options-drawer')).toHaveAttribute('data-open', 'true')
+
+    fireEvent.keyDown(window, { key: '`' })
+    expect(screen.getByTestId('scene-options-drawer')).toHaveAttribute('data-open', 'false')
   })
 
   it('closes the drawer on Escape', () => {
@@ -75,7 +77,7 @@ describe('DebugWrapper', () => {
       </DebugWrapper>,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: /open scene options/i }))
+    fireEvent.keyDown(window, { key: '`' })
     expect(screen.getByTestId('leva-panel')).toBeInTheDocument()
 
     fireEvent.keyDown(window, { key: 'Escape' })
@@ -89,7 +91,7 @@ describe('DebugWrapper', () => {
       </DebugWrapper>,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: /open scene options/i }))
+    fireEvent.keyDown(window, { key: '`' })
 
     const perfToggle = screen.getByRole('checkbox', {
       name: /show performance stats/i,
