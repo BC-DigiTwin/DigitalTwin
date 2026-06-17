@@ -8,6 +8,13 @@ The [Project Board](https://github.com/orgs/BC-DigiTwin/projects/2) is our singl
 
 ---
 
+## ⚙️ Setup: Node and npm (avoid lockfile conflicts)
+
+Use the **same Node and npm version** as the team so `package-lock.json` doesn't conflict on merge.  
+**Step-by-step:** [docs/NODE_NVM_SETUP.md](docs/NODE_NVM_SETUP.md) — install nvm, check `node -v` / `npm -v`, and team practices.
+
+---
+
 ## 🛠 Step-by-Step Workflow
 
 ### 1. Pick a Task

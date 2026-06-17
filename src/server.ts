@@ -1,4 +1,4 @@
-import app from './app';
+import app from './expressApp';
 
 // In production, the port comes from environment variables
 const PORT = process.env.PORT || 3000;
