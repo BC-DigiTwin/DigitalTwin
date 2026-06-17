@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { gpsToVector3 } from './gps'
+import { gpsToVector3, gpsToWorldPosition } from './gps'
+import { WORLD_ORIGIN } from '../constants/coordinates'
 
 /** ~111.2 km per degree latitude (WGS84 sphere). */
 const METERS_PER_DEGREE_LAT = (Math.PI / 180) * 6_371_000
@@ -64,5 +65,24 @@ describe('gpsToVector3', () => {
   it('returns Vector3 with Y = 0 (no elevation)', () => {
     const v = gpsToVector3(45, -122, 0, 0)
     expect(v.y).toBe(0)
+  })
+})
+
+describe('gpsToWorldPosition', () => {
+  it('maps WORLD_ORIGIN to scene (0, 0, 0)', () => {
+    const v = gpsToWorldPosition(WORLD_ORIGIN.lat, WORLD_ORIGIN.lon)
+    expect(v.x).toBe(0)
+    expect(v.y).toBe(0)
+    expect(v.z).toBeCloseTo(0, 10)
+  })
+
+  it('matches gpsToVector3 when using WORLD_ORIGIN as reference', () => {
+    const lat = 47.6
+    const lon = -122.2
+    const fromHelper = gpsToWorldPosition(lat, lon)
+    const fromBase = gpsToVector3(lat, lon, WORLD_ORIGIN.lat, WORLD_ORIGIN.lon)
+    expect(fromHelper.x).toBeCloseTo(fromBase.x, 10)
+    expect(fromHelper.y).toBe(fromBase.y)
+    expect(fromHelper.z).toBeCloseTo(fromBase.z, 10)
   })
 })

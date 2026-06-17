@@ -1,115 +1,107 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { DebugWrapper } from './DebugWrapper'
 import { useStore } from '../store/useStore'
 
-// Mock the store
-vi.mock('../store/useStore', () => ({
-  useStore: vi.fn(),
-}))
-
-// Mock leva and r3f-perf
+// Mock leva (anchor `Leva` stays hidden; drawer uses `LevaPanel`)
 vi.mock('leva', () => ({
   Leva: ({ hidden }: { hidden: boolean }) => (
-    <div data-testid="leva" data-hidden={hidden}>
-      Leva Panel
+    <div data-testid="leva" data-hidden={String(hidden)}>
+      Leva anchor
     </div>
   ),
-}))
-
-vi.mock('r3f-perf', () => ({
-  Perf: ({ position }: { position: string }) => (
-    <div data-testid="perf" data-position={position}>
-      Performance Monitor
-    </div>
-  ),
+  LevaPanel: () => <div data-testid="leva-panel">Leva panel</div>,
+  levaStore: {},
 }))
 
 describe('DebugWrapper', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    useStore.setState({ showPerfOverlay: false })
   })
 
-  it('renders children regardless of debugMode', () => {
-    ;(useStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue(false)
-
+  it('renders children', () => {
     render(
       <DebugWrapper>
         <div data-testid="child">Child Content</div>
-      </DebugWrapper>
+      </DebugWrapper>,
     )
 
     expect(screen.getByTestId('child')).toBeInTheDocument()
     expect(screen.getByText('Child Content')).toBeInTheDocument()
   })
 
-  it('hides Leva and Perf when debugMode is false', () => {
-    ;(useStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue(false)
-
+  it('always mounts a hidden Leva anchor (suppresses stray global panel)', () => {
     render(
       <DebugWrapper>
         <div>Content</div>
-      </DebugWrapper>
+      </DebugWrapper>,
     )
 
     const leva = screen.getByTestId('leva')
     expect(leva).toHaveAttribute('data-hidden', 'true')
-    expect(screen.queryByTestId('perf')).not.toBeInTheDocument()
   })
 
-  it('shows Leva and Perf when debugMode is true', () => {
-    ;(useStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue(true)
-
+  it('opens the drawer with LevaPanel when ` is pressed', () => {
     render(
       <DebugWrapper>
         <div>Content</div>
-      </DebugWrapper>
+      </DebugWrapper>,
     )
 
-    const leva = screen.getByTestId('leva')
-    const perf = screen.getByTestId('perf')
+    fireEvent.keyDown(window, { key: '`' })
 
-    expect(leva).toHaveAttribute('data-hidden', 'false')
-    expect(perf).toBeInTheDocument()
-    expect(perf).toHaveAttribute('data-position', 'top-left')
+    expect(screen.getByTestId('scene-options-drawer')).toHaveAttribute('data-open', 'true')
+    expect(screen.getByTestId('leva-panel')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /close/i })).toBeInTheDocument()
   })
 
-  it('configures Perf with top-left position', () => {
-    ;(useStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue(true)
-
+  it('toggles the drawer closed when ` is pressed again', () => {
     render(
       <DebugWrapper>
         <div>Content</div>
-      </DebugWrapper>
+      </DebugWrapper>,
     )
 
-    const perf = screen.getByTestId('perf')
-    expect(perf).toHaveAttribute('data-position', 'top-left')
+    fireEvent.keyDown(window, { key: '`' })
+    expect(screen.getByTestId('scene-options-drawer')).toHaveAttribute('data-open', 'true')
+
+    fireEvent.keyDown(window, { key: '`' })
+    expect(screen.getByTestId('scene-options-drawer')).toHaveAttribute('data-open', 'false')
   })
 
-  it('configures Leva with hidden prop based on debugMode', () => {
-    const { rerender } = render(
+  it('closes the drawer on Escape', () => {
+    render(
       <DebugWrapper>
         <div>Content</div>
-      </DebugWrapper>
+      </DebugWrapper>,
     )
 
-    // Test false state
-    ;(useStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue(false)
-    rerender(
-      <DebugWrapper>
-        <div>Content</div>
-      </DebugWrapper>
-    )
-    expect(screen.getByTestId('leva')).toHaveAttribute('data-hidden', 'true')
+    fireEvent.keyDown(window, { key: '`' })
+    expect(screen.getByTestId('leva-panel')).toBeInTheDocument()
 
-    // Test true state
-    ;(useStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue(true)
-    rerender(
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.getByTestId('scene-options-drawer')).toHaveAttribute('data-open', 'false')
+  })
+
+  it('toggles performance stats overlay from the drawer', () => {
+    render(
       <DebugWrapper>
         <div>Content</div>
-      </DebugWrapper>
+      </DebugWrapper>,
     )
-    expect(screen.getByTestId('leva')).toHaveAttribute('data-hidden', 'false')
+
+    fireEvent.keyDown(window, { key: '`' })
+
+    const perfToggle = screen.getByRole('checkbox', {
+      name: /show performance stats/i,
+    })
+    expect(perfToggle).not.toBeChecked()
+
+    fireEvent.click(perfToggle)
+    expect(useStore.getState().showPerfOverlay).toBe(true)
+
+    fireEvent.click(perfToggle)
+    expect(useStore.getState().showPerfOverlay).toBe(false)
   })
 })

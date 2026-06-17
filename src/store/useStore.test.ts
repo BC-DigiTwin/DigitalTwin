@@ -7,6 +7,7 @@ describe('useStore', () => {
         useStore.setState({
             debugMode: false,
             appState: 'initial',
+            showPerfOverlay: false,
         })
     })
 
@@ -29,6 +30,18 @@ describe('useStore', () => {
     })
 
     describe('Actions', () => {
+        it('should have showPerfOverlay set to false initially', () => {
+            const state = useStore.getState()
+            expect(state.showPerfOverlay).toBe(false)
+        })
+
+        it('should update showPerfOverlay when setShowPerfOverlay is called', () => {
+            useStore.getState().setShowPerfOverlay(false)
+            expect(useStore.getState().showPerfOverlay).toBe(false)
+            useStore.getState().setShowPerfOverlay(true)
+            expect(useStore.getState().showPerfOverlay).toBe(true)
+        })
+
         it('should update debugMode when setDebugMode is called with true', () => {
             useStore.getState().setDebugMode(true)
             const state = useStore.getState()
