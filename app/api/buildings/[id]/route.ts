@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import type { RowDataPacket } from 'mysql2'
-import mysql from 'mysql2/promise'
+
+import { getDbPool } from '../../../../lib/db'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -16,39 +17,6 @@ type BuildingRow = RowDataPacket & {
   primary_purpose: string | null
   operating_hours: string | null
   menu_tabs: unknown
-}
-
-const globalForPool = globalThis as unknown as {
-  buildingDbPool?: mysql.Pool
-}
-
-function getPool(): mysql.Pool {
-  if (globalForPool.buildingDbPool) {
-    return globalForPool.buildingDbPool
-  }
-
-  const host = process.env.DB_HOST
-  const port = Number(process.env.DB_PORT) || 3306
-  const user = process.env.DB_USER
-  const password = process.env.DB_PASSWORD
-  const database = process.env.DB_NAME
-
-  if (!host || !user || !password || !database) {
-    throw new Error('Missing database environment variables')
-  }
-
-  globalForPool.buildingDbPool = mysql.createPool({
-    host,
-    port,
-    user,
-    password,
-    database,
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0,
-  })
-
-  return globalForPool.buildingDbPool
 }
 
 /**
@@ -78,9 +46,9 @@ export async function GET(
 ): Promise<NextResponse> {
   const { id } = await context.params
 
-  let pool: mysql.Pool
+  let pool
   try {
-    pool = getPool()
+    pool = getDbPool()
   } catch {
     return NextResponse.json(
       { error: 'Database is not configured' },
