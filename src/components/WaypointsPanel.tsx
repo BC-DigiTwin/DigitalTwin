@@ -106,6 +106,8 @@ export function WaypointsPanel({
   const setSelectedWaypointId = useStore((s) => s.setSelectedWaypointId)
   const hoveredWaypointId = useStore((s) => s.hoveredWaypointId)
   const setHoveredWaypointId = useStore((s) => s.setHoveredWaypointId)
+  const hoveredWaypointCategory = useStore((s) => s.hoveredWaypointCategory)
+  const setHoveredWaypointCategory = useStore((s) => s.setHoveredWaypointCategory)
   const placementMode = useStore((s) => s.waypointPlacementMode)
   const setWaypointPlacementMode = useStore((s) => s.setWaypointPlacementMode)
   const draftCategory = useStore((s) => s.waypointDraftCategory)
@@ -292,20 +294,31 @@ export function WaypointsPanel({
           {WAYPOINT_CATEGORIES.map((c) => {
             const on = categoryFilters[c]
             const meta = WAYPOINT_CATEGORY_META[c]
+            const isCategoryHovered = hoveredWaypointCategory === c
             return (
               <button
                 key={c}
                 type="button"
                 onClick={() => toggleWaypointCategoryFilter(c)}
+                onMouseEnter={() => setHoveredWaypointCategory(c)}
+                onMouseLeave={() => {
+                  if (useStore.getState().hoveredWaypointCategory === c) {
+                    setHoveredWaypointCategory(null)
+                  }
+                }}
                 aria-pressed={on}
                 className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ring-1 transition ${
-                  on
-                    ? 'bg-white/12 text-white ring-white/22'
-                    : 'bg-white/4 text-white/45 ring-white/10 hover:text-white/70'
+                  isCategoryHovered
+                    ? 'bg-white/18 text-white ring-white/35'
+                    : on
+                      ? 'bg-white/12 text-white ring-white/22'
+                      : 'bg-white/4 text-white/45 ring-white/10 hover:text-white/70'
                 }`}
                 style={
-                  on
-                    ? { boxShadow: `inset 0 0 0 1px ${meta.color}55` }
+                  on || isCategoryHovered
+                    ? {
+                        boxShadow: `inset 0 0 0 1px ${meta.color}${isCategoryHovered ? 'aa' : '55'}`,
+                      }
                     : undefined
                 }
               >

@@ -9,17 +9,24 @@ interface DebugWrapperProps {
   children: React.ReactNode
 }
 
+function isEditableKeyTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLElement &&
+    target.closest('input, textarea, select, [contenteditable="true"]') != null
+  )
+}
+
 /**
  * DebugWrapper anchors Leva scene controls and hosts the scene-options drawer.
  *
  * Features:
- * - Fixed top-left menu control; fades out while the drawer is open so it never covers the panel
+ * - Toggle the drawer with the ` key (ignored while focus is in a text field)
  * - Drawer: slide + scale from the left (origin-left) with a short content fade-in stagger
  * - No modal overlay: scene stays fully visible and interactive while the
- *   drawer is open so Leva tweaks can be judged in place; close via Escape,
- *   the drawer Close button, or the trigger when it is visible again
- * - Toggle for the r3f-perf stats overlay (bottom-left when on)
- * - Drawer / menu z-index stays below 10000 so Leva’s portaled color picker
+ *   drawer is open so Leva tweaks can be judged in place; close via `, Escape,
+ *   or the drawer Close button
+ * - Toggle for the r3f-perf stats overlay (top-left when on)
+ * - Drawer z-index stays below 10000 so Leva’s portaled color picker
  *   (inline z-index 10000) and overlay remain usable
  *
  * @example
@@ -39,9 +46,14 @@ export function DebugWrapper({ children }: DebugWrapperProps) {
   const drawerTitleId = useId()
 
   useEffect(() => {
-    if (!drawerVisible) return
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setSceneOptionsOpen(false)
+      if (e.key === 'Escape' && drawerVisible) {
+        setSceneOptionsOpen(false)
+        return
+      }
+      if (e.key !== '`' || isEditableKeyTarget(e.target)) return
+      e.preventDefault()
+      setSceneOptionsOpen((open) => !open)
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
@@ -57,41 +69,6 @@ export function DebugWrapper({ children }: DebugWrapperProps) {
         The visible UI is `LevaPanel` inside the drawer.
       */}
       <Leva hidden />
-
-      <button
-        type="button"
-        className={`fixed left-3 top-3 z-9010 flex h-11 w-11 items-center justify-center rounded-lg bg-neutral-900/90 text-neutral-100 shadow-md ring-1 ring-white/10 transition-[opacity,transform,box-shadow] duration-200 ease-out will-change-[opacity,transform] hover:bg-neutral-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400 ${
-          drawerVisible
-            ? 'pointer-events-none scale-95 opacity-0'
-            : 'pointer-events-auto scale-100 opacity-100'
-        }`}
-        onClick={() => setSceneOptionsOpen((o) => !o)}
-        aria-expanded={drawerVisible}
-        aria-controls="scene-options-drawer"
-        aria-label={drawerVisible ? 'Close scene options' : 'Open scene options'}
-      >
-        <span className="sr-only">Scene options</span>
-        <svg
-          width="22"
-          height="22"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          aria-hidden
-        >
-          {drawerVisible ? (
-            <>
-              <path d="M6 6l12 12M18 6L6 18" />
-            </>
-          ) : (
-            <>
-              <path d="M4 7h16M4 12h16M4 17h16" />
-            </>
-          )}
-        </svg>
-      </button>
 
       <aside
         id="scene-options-drawer"
@@ -149,7 +126,7 @@ export function DebugWrapper({ children }: DebugWrapperProps) {
                 checked={showPerfOverlay}
                 onChange={(e) => setShowPerfOverlay(e.target.checked)}
               />
-              <span>Show performance stats (bottom-left)</span>
+              <span>Show performance stats (top-left)</span>
             </label>
           </div>
         </div>

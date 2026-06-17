@@ -36,7 +36,7 @@ import {
 function PerfOverlay() {
   const showPerfOverlay = useStore((s) => s.showPerfOverlay)
   if (!showPerfOverlay) return null
-  return <Perf position="bottom-left" minimal={false} />
+  return <Perf position="top-left" minimal={false} />
 }
 
 /**
@@ -763,7 +763,7 @@ function CameraViewControls({
       <button
         type="button"
         onClick={requestCameraReset}
-        className="flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-neutral-950/65 text-white shadow-lg backdrop-blur-2xl transition hover:bg-neutral-900/85"
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/15 bg-neutral-950/65 text-white shadow-lg backdrop-blur-2xl transition hover:bg-neutral-900/85"
         title={isOrbit ? 'Reset to default view' : 'Reset to campus overview'}
         aria-label={
           isOrbit
@@ -771,7 +771,7 @@ function CameraViewControls({
             : 'Reset camera to campus overview'
         }
       >
-        <HomeIcon className="h-4 w-4" />
+        <HomeIcon className="h-5 w-5 shrink-0" />
       </button>
 
       {/* Segmented Orbit / Top-down control — hidden on mobile while a building is selected */}
@@ -1046,14 +1046,7 @@ function HomeIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 20 20" fill="none" className={className} aria-hidden>
       <path
-        d="M3.5 9.5 10 4l6.5 5.5"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M5.25 8.5V15.5h9.5V8.5"
+        d="M4 16V8.5l6-4 6 4V16"
         stroke="currentColor"
         strokeWidth="1.5"
         strokeLinecap="round"

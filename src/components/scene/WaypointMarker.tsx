@@ -15,18 +15,29 @@ import { useClickDragThreshold } from '../../hooks/useClickDragThreshold'
  * Visible geometry constants — tuned to read on the campus greybox without
  * dominating buildings. Kept here so a single edit changes every marker.
  */
-const RING_INNER = 1.05
-const RING_OUTER = 1.7
+const MARKER_BASE_SCALE = 1.5
+const RING_INNER = 1.45
+const RING_OUTER = 2.35
 const RING_SEGMENTS = 64
-const BEAM_HEIGHT = 6
-const BEAM_RADIUS_BOTTOM = 0.14
-const BEAM_RADIUS_TOP = 0.045
+/** Soft outer halo — helps pins read as markers when zoomed out. */
+const HALO_INNER = 2.55
+const HALO_OUTER = 3.35
+const BEAM_HEIGHT = 8.5
+const BEAM_RADIUS_BOTTOM = 0.22
+const BEAM_RADIUS_TOP = 0.07
 const BEAM_SEGMENTS = 16
-const ICON_SIZE = 1.85
-const ICON_Y = 3.6
+const ICON_SIZE = 2.65
+const ICON_Y = 4.6
+/** Map view: larger sprite so the category glyph reads when the campus fits in frame. */
+const MAP_ICON_SIZE_MULT = 1.55
+/** Map view: draw above buildings without affecting orbit depth sorting. */
+const MAP_RENDER_ORDER_OFFSET = 250
 /** Cylinder hit-box that wraps the entire marker for forgiving click targets. */
-const PICKER_RADIUS = 1.9
-const PICKER_HEIGHT = 7
+const PICKER_RADIUS = 2.75
+const PICKER_HEIGHT = 10
+/** Category filter hover — beam stretches high and widens for every pin of that type. */
+const BEAM_CATEGORY_HEIGHT_MULT = 16
+const BEAM_CATEGORY_WIDTH_MULT = 2.28
 
 /* ── Shared beam shader: vertical alpha gradient (additive) ──────────── */
 
@@ -43,7 +54,7 @@ const BEAM_FRAGMENT_SHADER = /* glsl */ `
   uniform float uIntensity;
   varying float vT;
   void main() {
-    float alpha = pow(1.0 - vT, 1.8) * 0.55 * uIntensity;
+    float alpha = pow(1.0 - vT, 1.8) * 0.68 * uIntensity;
     if (alpha <= 0.001) discard;
     gl_FragColor = vec4(uColor * (1.0 + uIntensity * 0.4), alpha);
   }
@@ -51,7 +62,11 @@ const BEAM_FRAGMENT_SHADER = /* glsl */ `
 
 /* ── Interaction state ──────────────────────────────────────────────── */
 
-export type WaypointVisualState = 'base' | 'hovered' | 'selected'
+export type WaypointVisualState =
+  | 'base'
+  | 'hovered'
+  | 'selected'
+  | 'categoryHighlight'
 
 interface StateScalars {
   /** Multiplies ring + beam emissive intensity. */
@@ -63,11 +78,29 @@ interface StateScalars {
 }
 
 const STATE_SCALARS: Record<WaypointVisualState, StateScalars> = {
-  base: { intensity: 1.0, scale: 1.0, pulseHz: 0 },
-  // Hover: large, bright, and a quick lively pulse so it's obvious which
-  // marker is under the cursor / hovered row — even from far away.
-  hovered: { intensity: 2.7, scale: 1.45, pulseHz: 2.6 },
-  selected: { intensity: 2.4, scale: 1.3, pulseHz: 1.5 },
+  base: { intensity: 1.25, scale: 1.0, pulseHz: 0 },
+  // Hover: extra pop on top of MARKER_BASE_SCALE so the active pin reads clearly.
+  hovered: { intensity: 2.7, scale: 1.65, pulseHz: 2.6 },
+  selected: { intensity: 2.4, scale: 1.35, pulseHz: 1.5 },
+  // Panel category chip hover — all pins of that type grow together.
+  categoryHighlight: { intensity: 2.8, scale: 1.55, pulseHz: 2.2 },
+}
+
+function visualScaleForState(state: WaypointVisualState): number {
+  return MARKER_BASE_SCALE * STATE_SCALARS[state].scale
+}
+
+function beamScaleForState(state: WaypointVisualState): {
+  height: number
+  width: number
+} {
+  if (state === 'categoryHighlight') {
+    return {
+      height: BEAM_CATEGORY_HEIGHT_MULT,
+      width: BEAM_CATEGORY_WIDTH_MULT,
+    }
+  }
+  return { height: 1, width: 1 }
 }
 
 interface WaypointMarkerProps {
@@ -80,6 +113,8 @@ interface WaypointMarkerProps {
    * stay legible when the orthographic camera frames the entire campus.
    */
   markerScale?: number
+  /** Top-down map mode — pins render on top with a map-tuned icon. */
+  mapView?: boolean
   /** Fired after a click that passes the click-vs-drag threshold check. */
   onSelect: (waypointId: string) => void
 }
@@ -96,22 +131,35 @@ interface WaypointMarkerProps {
  */
 export const WaypointMarker = forwardRef<THREE.Group, WaypointMarkerProps>(
   function WaypointMarker(
-    { waypoint, yFloor, state, markerScale = 1, onSelect },
+    { waypoint, yFloor, state, markerScale = 1, mapView = false, onSelect },
     forwardedRef,
   ) {
     const groupRef = useRef<THREE.Group>(null)
+    const visualGroupRef = useRef<THREE.Group>(null)
     const ringRef = useRef<THREE.Mesh>(null)
+    const beamRef = useRef<THREE.Mesh>(null)
     const beamMatRef = useRef<THREE.ShaderMaterial>(null)
     const ringMatRef = useRef<THREE.MeshBasicMaterial>(null)
+    const haloMatRef = useRef<THREE.MeshBasicMaterial>(null)
+    const innerDiscMatRef = useRef<THREE.MeshBasicMaterial>(null)
     const spriteRef = useRef<THREE.Sprite>(null)
     const pickerRef = useRef<THREE.Mesh>(null)
 
     const color = WAYPOINT_CATEGORY_META[waypoint.category].color
     const colorObj = useMemo(() => new THREE.Color(color), [color])
     const iconTexture = useMemo(
-      () => getWaypointIconTexture(waypoint.category),
-      [waypoint.category],
+      () =>
+        getWaypointIconTexture(
+          waypoint.category,
+          1,
+          mapView ? 'map' : 'default',
+        ),
+      [waypoint.category, mapView],
     )
+    const iconSize = mapView ? ICON_SIZE * MAP_ICON_SIZE_MULT : ICON_SIZE
+    const iconY = mapView ? 0.05 : ICON_Y
+    const renderOrderOffset = mapView ? MAP_RENDER_ORDER_OFFSET : 0
+    const depthTest = !mapView
 
     /* ── Beam uniforms (kept stable across re-renders) ──────────── */
     const beamUniforms = useMemo(
@@ -150,51 +198,93 @@ export const WaypointMarker = forwardRef<THREE.Group, WaypointMarkerProps>(
     /* ── Push state-driven scalars into the materials each render ─ */
     useEffect(() => {
       const scalars = STATE_SCALARS[state]
+      const beamScale = beamScaleForState(state)
+      const isCategoryHighlight = state === 'categoryHighlight'
+
       if (ringMatRef.current) {
         ringMatRef.current.color.copy(colorObj)
-        ringMatRef.current.opacity = state === 'base' ? 0.78 : 1.0
+        ringMatRef.current.opacity = isCategoryHighlight
+          ? 1.0
+          : state === 'base'
+            ? 0.92
+            : 1.0
+      }
+      if (haloMatRef.current) {
+        haloMatRef.current.color.copy(colorObj)
+        haloMatRef.current.opacity = isCategoryHighlight ? 0.58 : 0.32
+      }
+      if (innerDiscMatRef.current) {
+        innerDiscMatRef.current.color.copy(colorObj)
+        innerDiscMatRef.current.opacity = isCategoryHighlight ? 0.55 : 0.38
       }
       if (beamMatRef.current) {
         ;(beamMatRef.current.uniforms.uColor.value as THREE.Color).copy(colorObj)
         beamMatRef.current.uniforms.uIntensity.value = scalars.intensity
       }
-      const ring = ringRef.current
-      if (ring) {
-        ring.scale.setScalar(scalars.scale)
+      const visualGroup = visualGroupRef.current
+      if (visualGroup) {
+        visualGroup.scale.setScalar(visualScaleForState(state))
       }
       const sprite = spriteRef.current
       if (sprite) {
-        sprite.scale.setScalar(ICON_SIZE * scalars.scale)
+        sprite.scale.setScalar(iconSize)
       }
-    }, [state, colorObj])
+      const beam = beamRef.current
+      if (beam) {
+        beam.scale.set(beamScale.width, beamScale.height, beamScale.width)
+        beam.position.y = (BEAM_HEIGHT * beamScale.height) / 2
+      }
+    }, [state, colorObj, iconSize])
 
     /* ── Animated pulse for hovered + selected states ───────────── */
     useFrame(({ clock }) => {
       const scalars = STATE_SCALARS[state]
+      const beamScale = beamScaleForState(state)
       const sprite = spriteRef.current
-      const ring = ringRef.current
+      const visualGroup = visualGroupRef.current
       const beam = beamMatRef.current
+      const beamMesh = beamRef.current
+      const baseVisualScale = visualScaleForState(state)
 
       if (scalars.pulseHz <= 0) {
         // Resting state: make sure the icon returns to its base height in
         // case we just left a pulsing (hover/selected) state mid-bob.
-        if (sprite) sprite.position.y = ICON_Y
+        if (sprite) sprite.position.y = iconY
+        if (visualGroup) visualGroup.scale.setScalar(baseVisualScale)
+        if (beamMesh) {
+          beamMesh.scale.set(beamScale.width, beamScale.height, beamScale.width)
+          beamMesh.position.y = (BEAM_HEIGHT * beamScale.height) / 2
+        }
         return
       }
 
       const t = clock.elapsedTime
       const pulse = 0.5 + 0.5 * Math.sin(t * scalars.pulseHz * Math.PI * 2)
+      const beamHeightPulse =
+        state === 'categoryHighlight'
+          ? beamScale.height * (1 + pulse * 0.08)
+          : beamScale.height
+      const beamWidthPulse =
+        state === 'categoryHighlight'
+          ? beamScale.width * (1 + pulse * 0.06)
+          : beamScale.width
+      const visualPulse =
+        state === 'hovered' || state === 'categoryHighlight'
+          ? 1 + pulse * 0.1
+          : 1 + pulse * 0.06
 
       if (beam) {
         beam.uniforms.uIntensity.value = scalars.intensity * (0.8 + pulse * 0.55)
       }
-      if (ring) {
-        ring.scale.setScalar(scalars.scale * (1 + pulse * 0.14))
+      if (beamMesh) {
+        beamMesh.scale.set(beamWidthPulse, beamHeightPulse, beamWidthPulse)
+        beamMesh.position.y = (BEAM_HEIGHT * beamHeightPulse) / 2
+      }
+      if (visualGroup) {
+        visualGroup.scale.setScalar(baseVisualScale * visualPulse)
       }
       if (sprite) {
-        sprite.scale.setScalar(ICON_SIZE * scalars.scale * (1 + pulse * 0.12))
-        // Gentle vertical bob so the icon visibly "lifts" while active.
-        sprite.position.y = ICON_Y + pulse * 0.6
+        sprite.position.y = iconY + pulse * 0.6
       }
     })
 
@@ -227,11 +317,34 @@ export const WaypointMarker = forwardRef<THREE.Group, WaypointMarkerProps>(
         scale={markerScale}
         name={`Waypoint:${waypoint.id}`}
       >
+        <group ref={visualGroupRef} scale={MARKER_BASE_SCALE}>
+        {/* Outer halo — hidden in map view; the sprite carries the pin read. */}
+        {!mapView && (
+        <mesh
+          rotation={[-Math.PI / 2, 0, 0]}
+          renderOrder={1 + renderOrderOffset}
+          raycast={() => undefined}
+        >
+          <ringGeometry args={[HALO_INNER, HALO_OUTER, RING_SEGMENTS]} />
+          <meshBasicMaterial
+            ref={haloMatRef}
+            color={color}
+            transparent
+            opacity={0.32}
+            depthWrite={false}
+            depthTest={depthTest}
+            side={THREE.DoubleSide}
+            toneMapped={false}
+          />
+        </mesh>
+        )}
+
         {/* Ground ring — flat, soft glow. depthWrite=false so the beam reads through it. */}
+        {!mapView && (
         <mesh
           ref={ringRef}
           rotation={[-Math.PI / 2, 0, 0]}
-          renderOrder={3}
+          renderOrder={3 + renderOrderOffset}
           raycast={() => undefined}
         >
           <ringGeometry args={[RING_INNER, RING_OUTER, RING_SEGMENTS]} />
@@ -239,33 +352,41 @@ export const WaypointMarker = forwardRef<THREE.Group, WaypointMarkerProps>(
             ref={ringMatRef}
             color={color}
             transparent
-            opacity={0.78}
+            opacity={0.92}
             depthWrite={false}
+            depthTest={depthTest}
             side={THREE.DoubleSide}
             toneMapped={false}
           />
         </mesh>
+        )}
 
         {/* Inner solid disc — adds a small read on the ground beneath the icon. */}
+        {!mapView && (
         <mesh
           rotation={[-Math.PI / 2, 0, 0]}
-          renderOrder={2}
+          renderOrder={2 + renderOrderOffset}
           raycast={() => undefined}
         >
-          <circleGeometry args={[RING_INNER - 0.05, RING_SEGMENTS]} />
+          <circleGeometry args={[RING_INNER - 0.08, RING_SEGMENTS]} />
           <meshBasicMaterial
+            ref={innerDiscMatRef}
             color={color}
             transparent
-            opacity={0.18}
+            opacity={0.38}
             depthWrite={false}
+            depthTest={depthTest}
             toneMapped={false}
           />
         </mesh>
+        )}
 
         {/* Vertical beam — additive, fades to 0 at top. */}
+        {!mapView && (
         <mesh
+          ref={beamRef}
           position={[0, BEAM_HEIGHT / 2, 0]}
-          renderOrder={4}
+          renderOrder={4 + renderOrderOffset}
           raycast={() => undefined}
         >
           <cylinderGeometry
@@ -285,25 +406,27 @@ export const WaypointMarker = forwardRef<THREE.Group, WaypointMarkerProps>(
             uniforms={beamUniforms}
             transparent
             depthWrite={false}
+            depthTest={depthTest}
             blending={THREE.AdditiveBlending}
             side={THREE.DoubleSide}
             toneMapped={false}
           />
         </mesh>
+        )}
 
         {/* Icon sprite — billboards automatically. */}
         <sprite
           ref={spriteRef}
-          position={[0, ICON_Y, 0]}
-          scale={[ICON_SIZE, ICON_SIZE, 1]}
-          renderOrder={5}
+          position={[0, iconY, 0]}
+          scale={[iconSize, iconSize, 1]}
+          renderOrder={5 + renderOrderOffset}
           raycast={() => undefined}
         >
           <spriteMaterial
             map={iconTexture}
             transparent
             depthWrite={false}
-            depthTest={true}
+            depthTest={depthTest}
             toneMapped={false}
           />
         </sprite>
@@ -311,16 +434,24 @@ export const WaypointMarker = forwardRef<THREE.Group, WaypointMarkerProps>(
         {/* Picker — invisible, only on INTERACTIVE, hit-tests the whole marker. */}
         <mesh
           ref={pickerRef}
-          position={[0, PICKER_HEIGHT / 2, 0]}
+          position={[0, (mapView ? iconSize : PICKER_HEIGHT) / 2, 0]}
           onPointerOver={handleOver}
           onPointerOut={handleOut}
           {...clickHandlers}
         >
           <cylinderGeometry
-            args={[PICKER_RADIUS, PICKER_RADIUS, PICKER_HEIGHT, 12, 1, true]}
+            args={[
+              mapView ? iconSize * 0.55 : PICKER_RADIUS,
+              mapView ? iconSize * 0.55 : PICKER_RADIUS,
+              mapView ? iconSize : PICKER_HEIGHT,
+              12,
+              1,
+              true,
+            ]}
           />
           <meshBasicMaterial visible={false} transparent opacity={0} />
         </mesh>
+        </group>
       </group>
     )
   },

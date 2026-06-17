@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
-import { useThree, type ThreeEvent } from '@react-three/fiber'
+import { createPortal, useThree, type ThreeEvent } from '@react-three/fiber'
 import { TransformControls } from '@react-three/drei'
 import type { TransformControls as TransformControlsImpl } from 'three-stdlib'
 
@@ -24,7 +24,7 @@ import {
 import { WaypointMarker, type WaypointVisualState } from './WaypointMarker'
 
 /** Uniform marker enlargement applied in the top-down map view. */
-const MAP_MARKER_SCALE = 2.1
+const MAP_MARKER_SCALE = 2.75
 
 /* ── Hydration ───────────────────────────────────────────────────────── */
 
@@ -274,18 +274,21 @@ function WaypointDragHandles({ target, waypointId }: WaypointDragHandlesProps) {
 export function WaypointsGroup() {
   useHydrateWaypoints()
 
+  const scene = useThree((s) => s.scene)
   const visible = useStore((s) => s.layers.waypoints)
   const waypoints = useStore((s) => s.waypoints)
   const selectedWaypointId = useStore((s) => s.selectedWaypointId)
   const hoveredWaypointId = useStore((s) => s.hoveredWaypointId)
+  const hoveredWaypointCategory = useStore((s) => s.hoveredWaypointCategory)
   const placementMode = useStore((s) => s.waypointPlacementMode)
   const categoryFilters = useStore((s) => s.waypointCategoryFilters)
   const setSelectedWaypointId = useStore((s) => s.setSelectedWaypointId)
   const cameraMode = useStore((s) => s.cameraMode)
+  const mapView = cameraMode === 'map'
 
   // Pins are world-sized, so the top-down map (orthographic, whole campus in
   // frame) shrinks them to specks. Enlarge each marker in map view.
-  const markerScale = cameraMode === 'map' ? MAP_MARKER_SCALE : 1
+  const markerScale = mapView ? MAP_MARKER_SCALE : 1
 
   /** id → group ref. Populated via ref callbacks below; consumed by TransformControls. */
   const markerRefs = useRef<Map<string, THREE.Group>>(new Map())
@@ -322,13 +325,14 @@ export function WaypointsGroup() {
     [setSelectedWaypointId],
   )
 
-  const resolveState = (id: string): WaypointVisualState => {
-    if (selectedWaypointId === id) return 'selected'
-    if (hoveredWaypointId === id) return 'hovered'
+  const resolveState = (wp: (typeof visibleWaypoints)[number]): WaypointVisualState => {
+    if (selectedWaypointId === wp.id) return 'selected'
+    if (hoveredWaypointId === wp.id) return 'hovered'
+    if (hoveredWaypointCategory === wp.category) return 'categoryHighlight'
     return 'base'
   }
 
-  return (
+  const content = (
     <group name="WaypointsGroup" visible={visible}>
       {visibleWaypoints.map((wp) => (
         <WaypointMarker
@@ -336,8 +340,9 @@ export function WaypointsGroup() {
           ref={refCallbackFor(wp.id)}
           waypoint={wp}
           yFloor={snapWaypointYToTerrain(wp.x, wp.z)}
-          state={resolveState(wp.id)}
+          state={resolveState(wp)}
           markerScale={markerScale}
+          mapView={mapView}
           onSelect={handleMarkerSelect}
         />
       ))}
@@ -352,4 +357,12 @@ export function WaypointsGroup() {
       )}
     </group>
   )
+
+  // Map view: portal to the scene root so markers draw after buildings without
+  // affecting orbit depth sorting when the camera is at an angle.
+  if (mapView) {
+    return createPortal(content, scene)
+  }
+
+  return content
 }

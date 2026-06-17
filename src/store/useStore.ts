@@ -143,6 +143,8 @@ export interface AppState {
     selectedWaypointId: string | null
     /** Mouseover waypoint id; updated imperatively from marker pointer events. */
     hoveredWaypointId: string | null
+    /** Category hovered in the panel filter row — highlights all pins of that type. */
+    hoveredWaypointCategory: WaypointCategory | null
     /** When true, the placement ground catcher is mounted and TransformControls attach to the selected waypoint. */
     waypointPlacementMode: boolean
     /** Category assigned to NEW waypoints created via placement mode click. */
@@ -208,6 +210,7 @@ export interface AppActions {
     removeWaypoint: (id: string) => void
     setSelectedWaypointId: (id: string | null) => void
     setHoveredWaypointId: (id: string | null) => void
+    setHoveredWaypointCategory: (category: WaypointCategory | null) => void
     setWaypointPlacementMode: (on: boolean) => void
     setWaypointDraftCategory: (category: WaypointCategory) => void
     toggleWaypointCategoryFilter: (category: WaypointCategory) => void
@@ -269,6 +272,7 @@ export const useStore = create<Store>()(
             waypoints: [],
             selectedWaypointId: null,
             hoveredWaypointId: null,
+            hoveredWaypointCategory: null,
             waypointPlacementMode: false,
             waypointDraftCategory: 'accessibility',
             waypointCategoryFilters: { ...DEFAULT_WAYPOINT_CATEGORY_FILTERS },
@@ -451,6 +455,13 @@ export const useStore = create<Store>()(
 
             setHoveredWaypointId: (id) =>
                 set({ hoveredWaypointId: id }, false, 'setHoveredWaypointId'),
+
+            setHoveredWaypointCategory: (category) =>
+                set(
+                    { hoveredWaypointCategory: category },
+                    false,
+                    'setHoveredWaypointCategory',
+                ),
 
             setWaypointPlacementMode: (on) =>
                 set({ waypointPlacementMode: on }, false, 'setWaypointPlacementMode'),
